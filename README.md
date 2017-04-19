@@ -54,6 +54,52 @@ gsr
       -> background -> ["127.16.28.25:10000"]
 ```
 
+Usage
+-----
+
+Have a Golang application/service and want to use `gsr`? It's as simple as
+this:
+
+```golang
+package main
+
+import (
+    "log"
+    "net"
+
+    "github.com/jaypipes/gsr"
+)
+
+func main() {
+    stype := "my-whizzbang-foo"
+    addr := myAddr()
+
+    sr, err := gsr.New()
+    if err != nil {
+        log.Fatalf("unable to connect to gsr: %v", err)
+    }
+    err = sr.Register(stype, addr)
+    if err != nil {
+        log.Fatalf("unable to register myself with gsr: %v", err)
+    }
+
+    otherServiceType := "my-service-dep"
+    for _, endpoint := sr.Endpoints(otherServiceType) {
+        // Do something with endpoint... maybe connect to it, init a service
+        // client, etc
+    }
+}
+
+func myAddr() string {
+    c := net.Dial("udp", "8.8.8.8:80")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer c.Close()
+    return c.LocalAddr().String()
+}
+```
+
 
 Configuring `gsr`
 -----------------
