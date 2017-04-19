@@ -1,7 +1,6 @@
-package util
+package gsr
 
 import (
-    "log"
 	"os"
     "strconv"
 )
@@ -25,7 +24,6 @@ func EnvOrDefaultInt(key string, def int) int {
     }
     i, err := strconv.Atoi(val)
     if err != nil {
-        log.Printf("Expected integer value for %v env variable, but got %v. Defaulting to %v", key, val, def)
         return def
     }
     return i
@@ -40,7 +38,6 @@ func EnvOrDefaultBool(key string, def bool) bool {
     }
     b, err := strconv.ParseBool(val)
     if err != nil {
-        log.Printf("Expected boolean value for %v env variable, but got %v. Defaulting to %v", key, val, def)
         return def
     }
     return b

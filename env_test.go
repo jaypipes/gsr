@@ -1,4 +1,4 @@
-package util
+package gsr
 
 import (
     "os"

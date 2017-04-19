@@ -57,22 +57,36 @@
 			"revisionTime": "2017-03-31T03:19:02Z"
 		},
 		{
-			"checksumSHA1": "yJsAtZz3u/pLqWp8esDFKiupY7g=",
+			"checksumSHA1": "9nux1XAEPCWzvLbdoP3j8NxzAao=",
+			"path": "github.com/grpc-ecosystem/grpc-gateway",
+			"revision": "04870f0741c24d2bfc76a7c7db112f4e107e9ada",
+			"revisionTime": "2017-03-24T13:56:43Z",
+			"version": "v1.2.0",
+			"versionExact": "v1.2.0.rc1"
+		},
+		{
+			"checksumSHA1": "wFjV19ovhVabAqB6NTF8sWAJDIA=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime",
-			"revision": "893772d22fa36a34e409fc54e3c1c1a51c72b21e",
-			"revisionTime": "2017-03-24T00:58:46Z"
+			"revision": "04870f0741c24d2bfc76a7c7db112f4e107e9ada",
+			"revisionTime": "2017-03-24T13:56:43Z",
+			"version": "v1.2.0",
+			"versionExact": "v1.2.0.rc1"
 		},
 		{
 			"checksumSHA1": "et8uiXNw6yM96U/UZgn2vKtyr3Q=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
-			"revision": "893772d22fa36a34e409fc54e3c1c1a51c72b21e",
-			"revisionTime": "2017-03-24T00:58:46Z"
+			"revision": "04870f0741c24d2bfc76a7c7db112f4e107e9ada",
+			"revisionTime": "2017-03-24T13:56:43Z",
+			"version": "v1.2.0",
+			"versionExact": "v1.2.0.rc1"
 		},
 		{
 			"checksumSHA1": "vqiK5r5dntV7JNZ+ZsGlD0Samos=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/utilities",
-			"revision": "893772d22fa36a34e409fc54e3c1c1a51c72b21e",
-			"revisionTime": "2017-03-24T00:58:46Z"
+			"revision": "04870f0741c24d2bfc76a7c7db112f4e107e9ada",
+			"revisionTime": "2017-03-24T13:56:43Z",
+			"version": "v1.2.0",
+			"versionExact": "v1.2.0.rc1"
 		},
 		{
 			"checksumSHA1": "Y+HGqEkYM15ir+J93MEaHdyFy0c=",

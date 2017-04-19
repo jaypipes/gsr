@@ -67,3 +67,13 @@ environment variables. Here is a list of environment variables that influence
 
 * `GSR_KEY_PREFIX`: a string indicating the prefix of keys in `etcd` where `gsr`
    will store service and endpoint information. (default: `''`)
+
+* `GSR_ETCD_CONNECT_TIMEOUT_SECONDS`: the number of seconds to attempt to
+  connect to the `etcd` when calling `gsr.New()`. (default: `300`)
+
+* `GSR_ETCD_REQUEST_TIMEOUT_SECONDS`: the number of seconds to set each `etcd`
+  request timeout to, once connected. (default: `1`)
+
+* `GSR_LOG_LEVEL`: an integer representing the verbosity of logging. The higher
+  the number, the more verbose. (default: `0` almost no output during normal
+  operation)

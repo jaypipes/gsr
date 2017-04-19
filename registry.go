@@ -13,14 +13,14 @@ package gsr
 
 import (
     "encoding/json"
-    "fmt"
     "log"
+    "net"
     "strings"
+    "syscall"
     "time"
 
     "golang.org/x/net/context"
     etcd "github.com/coreos/etcd/clientv3"
-    "github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 
     "github.com/cenkalti/backoff"
 )
@@ -28,6 +28,9 @@ import (
 const (
     defaultEtcdEndpoints = "http://127.0.0.1:2379"
     defaultEtcdKeyPrefix = "gsr/"
+    defaultEtcdConnectTimeout = 300 // 5 minutes
+    defaultEtcdRequestTimeout = 1
+    defaultLogLevel = 0
 )
 
 var (
@@ -44,7 +47,22 @@ var (
         ),
         "/",
     ) + "/"
-    etcdReqTimeout = time.Second
+    etcdConnectTimeout = time.Duration(
+        EnvOrDefaultInt(
+            "GSR_ETCD_CONNECT_TIMEOUT_SECONDS",
+            defaultEtcdConnectTimeout,
+        ),
+    ) * time.Second
+    etcdRequestTimeout = time.Duration(
+        EnvOrDefaultInt(
+            "GSR_ETCD_REQUEST_TIMEOUT_SECONDS",
+            defaultEtcdRequestTimeout,
+        ),
+    ) * time.Second
+    logLevel = EnvOrDefaultInt(
+        "GSR_LOG_LEVEL",
+        defaultLogLevel,
+    )
     servicesKey = etcdKeyPrefix + "services/"
     byTypeKey = servicesKey + "by-type/"
 )
@@ -52,7 +70,7 @@ var (
 type Registry struct {
     endpoints map[string][]string
     client *etcd.Client
-    generation uint32
+    generation int64
 }
 
 // Registers an endpoint for a service type. This method is idempotent and
@@ -61,9 +79,10 @@ type Registry struct {
 func (r *Registry) Register(stype string, endpoint string) error {
     eps, found := r.endpoints[endpoint]
     if ! found {
-        r.endpoints[stype] = eps = make([]string)
+        eps = make([]string, 10)
+        r.endpoints[stype] = eps
     }
-    for ep, _ := range(eps) {
+    for _, ep := range(eps) {
         if ep == endpoint {
             // Refresh the TTL for the endpoint
             return nil
@@ -74,16 +93,17 @@ func (r *Registry) Register(stype string, endpoint string) error {
     // endpoints.
     c := r.client
     key := byTypeKey + stype
-    val, err := json.Marshall(eps)
+    val, err := json.Marshal(eps)
     if err != nil {
         log.Printf("error: failure to serialize %v to JSON: %v", eps, err)
         return err
     }
 
-    onSuccess := etcd.OpPut(key, val)
+    onSuccess := etcd.OpPut(key, string(val))
     compare := etcd.Compare(etcd.Version(servicesKey), "=", r.generation)
-    ctx, cancel := context.WithTimeout(context.Background(), etcdReqTimeout)
-    res, err := c.KV.Trx(ctx).If(compare).Then(onSuccess).Commit()
+    ctx, cancel := requestCtx()
+    _, err = c.KV.Txn(ctx).If(compare).Then(onSuccess).Commit()
+    cancel()
 
     if err != nil {
         log.Printf("error: transaction failed writing to etcd: %v", err)
@@ -106,41 +126,73 @@ func (r *Registry) Endpoints(stype string) ([]string) {
 // Returns an etcd3 client using an exponential backoff and reconnect strategy.
 // This is to be tolerant of the etcd infrastructure VMs/containers starting
 // *after* a service that requires it.
-func etcdClient() (*etcd.Client, error) {
+func connect() (*etcd.Client, error) {
     var err error
-    bo := backoff.NewExponentialBackOff()
+    var client *etcd.Client
+    fatal := false
 
-    log.Printf("Connecting to etcd endpoints: %v", etcdEndpoints)
+    bo := backoff.NewExponentialBackOff()
+    bo.MaxElapsedTime = etcdConnectTimeout
+
+    debug("connecting to etcd endpoints: %v", etcdEndpoints)
     cfg := etcd.Config{
         Endpoints: etcdEndpoints,
         DialTimeout: time.Second,
     }
-    client, err := etcd.New(cfg)
-    if err != nil {
-        log.Fatalf("Failed to allocate memory for etcd client.")
-        return nil, err
-    }
 
     fn := func() error {
-        var err error
-        ctx, cancel := context.WithTimeout(context.Background(), etcdReqTimeout)
+        client, err = etcd.New(cfg)
+        if err != nil {
+            switch t := err.(type) {
+                case *net.OpError:
+                    oerr := err.(*net.OpError)
+                    if oerr.Temporary() || oerr.Timeout() {
+                        // Each of these scenarios are errors that we can retry
+                        // the operation. Services may come up in different
+                        // order and we don't want to require a specific order
+                        // of startup...
+                        return err
+                    }
+                    if t.Op == "dial" {
+                        // Unknown host... probably a DNS failure and not
+                        // something we're going to be able to recover from in
+                        // a retry, to bail out
+                        msg := "error: unknown host trying reach etcd " +
+                               "endpoint. unrecoverable error, so exiting."
+                        debug(msg)
+                        fatal = true
+                        return err
+                    } else if t.Op == "read" {
+                        // Connection refused. This is an error we can backoff
+                        // and retry in case the application running gsr.New()
+                        // started before the etcd data store
+                        return err
+                    }
+                case syscall.Errno:
+                    if t == syscall.ECONNREFUSED {
+                        // Connection refused. This is an error we can backoff
+                        // and retry in case the application running gsr.New()
+                        // started before the etcd data store
+                        return err
+                    }
+            }
+            if err == context.Canceled || err == context.DeadlineExceeded {
+                return err
+            }
+            fatal = true
+            return err
+        }
+        ctx, cancel := requestCtx()
         _, err = client.KV.Get(ctx, "/services", etcd.WithPrefix())
         cancel()
         if err != nil {
-            if err == rpctypes.ErrEmptyKey {
-                // In this case, we have a functioning etcd3 cluster but
-                // nothing has yet to create the first service key by calling
-                // Registry.Register(). Just return nil and then return the
-                // client after the retry loop. We're all good now.
-                return nil
-            }
             // Each of these scenarios are errors that we can retry the
             // operation. Services may come up in different order and we don't
             // want to require a specific order of startup...
             if err == context.Canceled || err == context.DeadlineExceeded {
-                return fmt.Errorf("timeout or TCP cancellation")
+                return err
             }
-            msg := "Fatal error attempting to get service registry: " +
+            msg := "error: failed attempting to get service registry: " +
                    "%v. Exiting."
             log.Fatalf(msg, err)
         }
@@ -150,11 +202,14 @@ func etcdClient() (*etcd.Client, error) {
     ticker := backoff.NewTicker(bo)
 
     attempts:= 0
-    log.Printf("Grabbing service registry from etcd.")
+    debug("grabbing service registry from etcd.")
     for _ = range ticker.C {
         if err = fn(); err != nil {
             attempts += 1
-            log.Printf("Failed to get service registry: %v. Retrying.", err)
+            if fatal {
+                break
+            }
+            debug("failed to get service registry: %v. retrying.", err)
             continue
         }
 
@@ -163,10 +218,8 @@ func etcdClient() (*etcd.Client, error) {
     }
 
     if err != nil {
-        msg := "Failed to get service registry. Final error reported: %v"
-        log.Printf(msg, err)
-        log.Printf("Attempted %d times over %v. Exiting.",
-                   attempts, bo.GetElapsedTime().String())
+        debug("failed to get service registry. final error reported: %v", err)
+        debug("attempted %d times over %v. exiting.", attempts, bo.GetElapsedTime().String())
         return nil, err
     }
     return client, nil
@@ -175,30 +228,30 @@ func etcdClient() (*etcd.Client, error) {
 // Loads all endpoints in the gsr registry
 func (r *Registry) load() error {
     c := r.client
-    ctx, cancel := context.WithTimeout(context.Background(), etcdReqTimeout)
-    sort := clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend)
-    resp, err := client.KV.Get(ctx, servicesKey, etcd.WithPrefix(), sort)
+    ctx, cancel := requestCtx()
+    sort := etcd.WithSort(etcd.SortByKey, etcd.SortAscend)
+    resp, err := c.KV.Get(ctx, servicesKey, etcd.WithPrefix(), sort)
     cancel()
     if err != nil {
-        log.Printf("error: failed to load endpoints from registry: %v", err)
         return err
     }
     // The full key will be "$KEY_PREFIX/services/by-type/$SERVICE_TYPE
     // We will strip everything other than $SERVICE_TYPE below.
-    lenPrefix = len(byTypeKey)
+    lenPrefix := len(byTypeKey)
     // Set the stored registry generation to the entire key range's revision
-    r.generation = resp.header.revision
+    r.generation = resp.Header.Revision
+    var eps []string
     for _, kv := range(resp.Kvs) {
         key := kv.Key
-        if strings.HasPrefix(key, byTypeKey) {
+        if strings.HasPrefix(string(key), byTypeKey) {
             val := kv.Value
-            stype = key[lenPrefix:]
-            eps, err := json.Unmarshal(val)
+            stype := key[lenPrefix:]
+            err := json.Unmarshal(val, &eps)
             if err != nil {
-                log.Printf("error: failed to unmarshal JSON: %v", err)
+                debug("skipping key %v. failed to unmarshal JSON: %v.", key, err)
                 continue
             }
-            r.endpoints[stype] = eps
+            r.endpoints[string(stype)] = eps
         }
     }
 
@@ -208,9 +261,8 @@ func (r *Registry) load() error {
 // Creates a new gsr.Registry object
 func New() (*Registry, error) {
     r := new(Registry)
-    client, err := etcdClient()
+    client, err := connect()
     if err != nil {
-        log.Printf("error: unable to connect to etcd: %v", err)
         return nil, err
     }
     r.generation = 0
@@ -218,8 +270,12 @@ func New() (*Registry, error) {
     r.endpoints = make(map[string][]string, 10)
     err = r.load()
     if err != nil {
-        log.Printf("error: unable to load endpoints from gsr registry: %v", err)
         return nil, err
     }
+    info("connected to gsr registry.")
     return r, nil
+}
+
+func requestCtx() (context.Context, context.CancelFunc) {
+    return context.WithTimeout(context.Background(), etcdRequestTimeout)
 }
