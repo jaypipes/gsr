@@ -25,45 +25,8 @@ import (
     "github.com/cenkalti/backoff"
 )
 
-const (
-    defaultEtcdEndpoints = "http://127.0.0.1:2379"
-    defaultEtcdKeyPrefix = "gsr/"
-    defaultEtcdConnectTimeout = 300 // 5 minutes
-    defaultEtcdRequestTimeout = 1
-    defaultLogLevel = 0
-)
-
 var (
-    etcdEndpoints = strings.Split(
-        EnvOrDefaultStr(
-            "GSR_ETCD_ENDPOINTS", defaultEtcdEndpoints,
-        ),
-        ",",
-    )
-    etcdKeyPrefix = strings.TrimRight(
-        EnvOrDefaultStr(
-            "GSR_KEY_PREFIX",
-            defaultEtcdKeyPrefix,
-        ),
-        "/",
-    ) + "/"
-    etcdConnectTimeout = time.Duration(
-        EnvOrDefaultInt(
-            "GSR_ETCD_CONNECT_TIMEOUT_SECONDS",
-            defaultEtcdConnectTimeout,
-        ),
-    ) * time.Second
-    etcdRequestTimeout = time.Duration(
-        EnvOrDefaultInt(
-            "GSR_ETCD_REQUEST_TIMEOUT_SECONDS",
-            defaultEtcdRequestTimeout,
-        ),
-    ) * time.Second
-    logLevel = EnvOrDefaultInt(
-        "GSR_LOG_LEVEL",
-        defaultLogLevel,
-    )
-    servicesKey = etcdKeyPrefix + "services/"
+    servicesKey = etcdKeyPrefix() + "services/"
     byTypeKey = servicesKey + "by-type/"
 )
 
@@ -132,11 +95,13 @@ func connect() (*etcd.Client, error) {
     fatal := false
 
     bo := backoff.NewExponentialBackOff()
-    bo.MaxElapsedTime = etcdConnectTimeout
+    bo.MaxElapsedTime = etcdConnectTimeout()
 
-    debug("connecting to etcd endpoints: %v", etcdEndpoints)
+    etcdEps := etcdEndpoints()
+
+    debug("connecting to etcd endpoints: %v", etcdEps)
     cfg := etcd.Config{
-        Endpoints: etcdEndpoints,
+        Endpoints: etcdEps,
         DialTimeout: time.Second,
     }
 
@@ -277,5 +242,5 @@ func New() (*Registry, error) {
 }
 
 func requestCtx() (context.Context, context.CancelFunc) {
-    return context.WithTimeout(context.Background(), etcdRequestTimeout)
+    return context.WithTimeout(context.Background(), etcdRequestTimeout())
 }
