@@ -1,18 +1,18 @@
 package gsr
 
 // Implements a simple service registry using an etcd3 K/V store. Within the
-// etcd3 key namespace, there are "indexes" for service type:
+// etcd3 key namespace, there are "indexes" for service:
 //
 // $KEY_PREFIX <-- environ['GSR_KEY_PREFIX']
 // |
 // -> /services
 //    |
-//    -> /by-type
-//       |
-//       -> /$SERVICE_TYPE: JSON-serialized list of endpoints
+//    ->> /$SERVICE
+//        |
+//        -> /$ENDPOINT1
+//        -> /$ENDPOINT2
 
 import (
-    "encoding/json"
     "log"
     "net"
     "strings"
@@ -25,65 +25,118 @@ import (
     "github.com/cenkalti/backoff"
 )
 
-var (
-    servicesKey = etcdKeyPrefix() + "services/"
-    byTypeKey = servicesKey + "by-type/"
-)
-
 type Registry struct {
     endpoints map[string][]string
     client *etcd.Client
     generation int64
+    heartbeat <-chan *etcd.LeaseKeepAliveResponse
+}
+
+// Returns a list of endpoints for a requested service type.
+func (r *Registry) Endpoints(service string) ([]string) {
+    eps, found := r.endpoints[service]
+    if ! found {
+        return nil
+    }
+    return eps
+}
+
+// Loads all endpoints in the gsr registry
+func (r *Registry) load() error {
+    c := r.client
+    sort := etcd.WithSort(etcd.SortByKey, etcd.SortAscend)
+    skey := servicesKey()
+    ctx, cancel := requestCtx()
+    resp, err := c.KV.Get(ctx, skey, etcd.WithPrefix(), sort)
+    cancel()
+    if err != nil {
+        return err
+    }
+
+    curGen := resp.Header.Revision
+    debug("found initial generation of gsr registry: %d", curGen)
+
+    // Set the stored registry generation to the entire key range's revision
+    r.generation = curGen
+
+    // The full key will be "$KEY_PREFIX/services/$SERVICE/$ENDPOINT
+    lenServicesKey := len(skey)
+    eps := make(map[string][]string, 0)
+    for _, kv := range(resp.Kvs) {
+        key := kv.Key
+        parts := strings.Split(string(key[lenServicesKey:]), "/")
+        service := parts[0]
+        endpoint := parts[1]
+        if _, created := eps[service]; ! created {
+            eps[service] = []string{endpoint}
+        } else {
+            eps[service] = append(eps[service], endpoint)
+        }
+    }
+    debug("found endpoints %v", eps)
+    r.endpoints = eps
+
+    return nil
 }
 
 // Registers an endpoint for a service type. This method is idempotent and
 // merely updates the registry's TTL for the endpoint if the endpoint already
 // is registered.
-func (r *Registry) Register(stype string, endpoint string) error {
-    eps, found := r.endpoints[endpoint]
+func (r *Registry) register(service string, endpoint string) error {
+    eps, found := r.endpoints[service]
+
     if ! found {
-        eps = make([]string, 10)
-        r.endpoints[stype] = eps
+        return r.newService(service, endpoint)
     }
+
+    // have we already registered this endpoint in the Registry object? If so,
+    // all we want to do is refresh the lease on the endpoint entry in the etcd
+    // store
     for _, ep := range(eps) {
         if ep == endpoint {
-            // Refresh the TTL for the endpoint
+            debug("refreshing lease for endpoint %s in service %s", ep, service)
             return nil
         }
     }
-    eps = append(eps, endpoint)
-    // No such endpoint known. Add it to the service type entry's list of
-    // endpoints.
-    c := r.client
-    key := byTypeKey + stype
-    val, err := json.Marshal(eps)
-    if err != nil {
-        log.Printf("error: failure to serialize %v to JSON: %v", eps, err)
-        return err
-    }
-
-    onSuccess := etcd.OpPut(key, string(val))
-    compare := etcd.Compare(etcd.Version(servicesKey), "=", r.generation)
-    ctx, cancel := requestCtx()
-    _, err = c.KV.Txn(ctx).If(compare).Then(onSuccess).Commit()
-    cancel()
-
-    if err != nil {
-        log.Printf("error: transaction failed writing to etcd: %v", err)
-        return err
-    }
-
-    r.generation += 1
     return nil
 }
 
-// Returns a list of endpoints for a requested service type.
-func (r *Registry) Endpoints(stype string) ([]string) {
-    eps, found := r.endpoints[stype]
-    if ! found {
-        return nil
+// Creates an entry for a brand new service type in the gsr registry
+func (r *Registry) newService(service string, endpoint string) error {
+    c := r.client
+    eps := []string{endpoint}
+
+    debug("creating new registry entry for service %s: %v", service, eps)
+
+    lease, err := c.Grant(context.TODO(), leaseTimeout())
+    if err != nil {
+        log.Printf("error: failed to grant lease in etcd: %v", err)
+        return err
     }
-    return eps
+
+    ekey := endpointKey(service, endpoint)
+    onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(lease.ID))
+    // Ensure the $PREFIX/services/$SERVICE/$ENDPOINT key doesn't yet exist
+    compare := etcd.Compare(etcd.Version(ekey), "=", 0)
+    ctx, cancel := requestCtx()
+    resp, err := c.KV.Txn(ctx).If(compare).Then(onSuccess).Commit()
+    cancel()
+
+    if err != nil {
+        log.Printf("error: failed to create txn in etcd: %v", err)
+        return err
+    } else if resp.Succeeded == false {
+        debug("concurrent write detected to key %v.", ekey)
+    }
+    ch, err := c.KeepAlive(context.TODO(), lease.ID)
+    if err != nil {
+        log.Printf("error: failed to create keepalive in etcd: %v", err)
+        return err
+    }
+    r.endpoints[service] = eps
+    r.generation = resp.Header.Revision
+    r.heartbeat = ch
+    return nil
 }
 
 // Returns an etcd3 client using an exponential backoff and reconnect strategy.
@@ -99,7 +152,7 @@ func connect() (*etcd.Client, error) {
 
     etcdEps := etcdEndpoints()
 
-    debug("connecting to etcd endpoints: %v", etcdEps)
+    debug("connecting to etcd endpoints: %v.", etcdEps)
     cfg := etcd.Config{
         Endpoints: etcdEps,
         DialTimeout: time.Second,
@@ -190,55 +243,40 @@ func connect() (*etcd.Client, error) {
     return client, nil
 }
 
-// Loads all endpoints in the gsr registry
-func (r *Registry) load() error {
-    c := r.client
-    ctx, cancel := requestCtx()
-    sort := etcd.WithSort(etcd.SortByKey, etcd.SortAscend)
-    resp, err := c.KV.Get(ctx, servicesKey, etcd.WithPrefix(), sort)
-    cancel()
-    if err != nil {
-        return err
-    }
-    // The full key will be "$KEY_PREFIX/services/by-type/$SERVICE_TYPE
-    // We will strip everything other than $SERVICE_TYPE below.
-    lenPrefix := len(byTypeKey)
-    // Set the stored registry generation to the entire key range's revision
-    r.generation = resp.Header.Revision
-    var eps []string
-    for _, kv := range(resp.Kvs) {
-        key := kv.Key
-        if strings.HasPrefix(string(key), byTypeKey) {
-            val := kv.Value
-            stype := key[lenPrefix:]
-            err := json.Unmarshal(val, &eps)
-            if err != nil {
-                debug("skipping key %v. failed to unmarshal JSON: %v.", key, err)
-                continue
-            }
-            r.endpoints[string(stype)] = eps
-        }
-    }
-
-    return nil
-}
-
-// Creates a new gsr.Registry object
-func New() (*Registry, error) {
+// Creates a new gsr.Registry object, registers a service and endpoint with the
+// registry, and returns the registry object.
+func Start(service string, endpoint string) (*Registry, error) {
     r := new(Registry)
     client, err := connect()
     if err != nil {
         return nil, err
     }
+    info("connected to registry.")
     r.generation = 0
     r.client = client
-    r.endpoints = make(map[string][]string, 10)
     err = r.load()
     if err != nil {
         return nil, err
     }
-    info("connected to gsr registry.")
+    info("loaded registry.")
+    err = r.register(service, endpoint)
+    if err != nil {
+        return nil, err
+    }
+    info("registered %s:%s", service, endpoint)
     return r, nil
+}
+
+func servicesKey() string {
+    return etcdKeyPrefix() + "services/"
+}
+
+func serviceKey(service string) string {
+    return servicesKey() + service
+}
+
+func endpointKey(service string, endpoint string) string {
+    return serviceKey(service) + "/" + endpoint
 }
 
 func requestCtx() (context.Context, context.CancelFunc) {

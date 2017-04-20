@@ -18,9 +18,10 @@ $KEY_PREFIX <-- environ['GSR_KEY_PREFIX']
 |
 -> /services
    |
-   -> /by-type
-   |
-   -> /$SERVICE_TYPE: JSON-serialized list of endpoints
+   -> /$SERVICE
+       |
+       -> /$ENDPOINT1
+       -> /$ENDPOINT2
 ```
 
 As an example, let's imagine you have a distributed system deployment composed
@@ -47,11 +48,17 @@ gsr
 |
 -> /services
    |
-   -> /by-type
-      |
-      -> web => ["127.16.28.23:80"]
-      -> data-access => ["127.16.28.24:10000"]
-      -> background -> ["127.16.28.25:10000"]
+   -> web
+       |
+       -> 127.16.28.23:80
+
+   -> data-access
+       |
+       -> 127.16.28.24:10000\
+
+   -> background
+       |
+       -> 127.16.28.25:10000
 ```
 
 Usage
@@ -74,13 +81,9 @@ func main() {
     stype := "my-whizzbang-foo"
     addr := myAddr()
 
-    sr, err := gsr.New()
+    sr, err := gsr.Start(stype, addr)
     if err != nil {
         log.Fatalf("unable to connect to gsr: %v", err)
-    }
-    err = sr.Register(stype, addr)
-    if err != nil {
-        log.Fatalf("unable to register myself with gsr: %v", err)
     }
 
     otherServiceType := "my-service-dep"
@@ -123,3 +126,6 @@ environment variables. Here is a list of environment variables that influence
 * `GSR_LOG_LEVEL`: an integer representing the verbosity of logging. The higher
   the number, the more verbose. (default: `0` almost no output during normal
   operation)
+
+* `GSR_LEASE_SECONDS`: an integer representing the number of seconds gsr should
+  use when writing endpoint information into the registry. (default: `60`)

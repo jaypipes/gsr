@@ -8,9 +8,10 @@ import (
 const (
     defaultEtcdEndpoints = "http://127.0.0.1:2379"
     defaultEtcdKeyPrefix = "gsr/"
-    defaultEtcdConnectTimeoutSeconds = 300 // 5 minutes
+    defaultEtcdConnectTimeoutSeconds = 300
     defaultEtcdRequestTimeoutSeconds = 1
     defaultLogLevel = 0
+    defaultLeaseSeconds = 60
 )
 
 // Returns the set of etcd3 endpoints used by gsr.
@@ -75,4 +76,12 @@ func logLevel() int {
         "GSR_LOG_LEVEL",
         defaultLogLevel,
     )
+}
+
+// Returns the currently-configured endpoint key lease timeout in seconds
+func leaseTimeout() int64 {
+    return int64(EnvOrDefaultInt(
+        "GSR_LEASE_SECONDS",
+        defaultLeaseSeconds,
+    ))
 }
