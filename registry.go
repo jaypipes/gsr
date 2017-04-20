@@ -83,13 +83,12 @@ func (r *Registry) load() error {
 
 // Sets up a watch channel for any changes to the gsr registry so that the
 // Registry object can refresh its map of service endpoints when changes occur.
-func (r *Registry) setupWatch() error {
+func (r *Registry) setupWatch() {
     c := r.client
     key := servicesKey()
     debug("creating watch on %s", key)
     r.watcher = c.Watch(context.Background(), key, etcd.WithPrefix())
     go handleChanges(r)
-    return nil
 }
 
 // Registers an endpoint for a service type. This method is idempotent and
@@ -126,6 +125,8 @@ func (r *Registry) register(service string, endpoint string) error {
     }
     r.heartbeat = ch
     debug("started heartbeat channel for %s:%s", service, endpoint)
+
+    r.setupWatch()
     return nil
 }
 
