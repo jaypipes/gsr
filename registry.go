@@ -30,6 +30,8 @@ type Registry struct {
     client *etcd.Client
     generation int64
     heartbeat <-chan *etcd.LeaseKeepAliveResponse
+    watcher etcd.WatchChan
+    lease etcd.LeaseID
 }
 
 // Returns a list of endpoints for a requested service type.
@@ -79,43 +81,62 @@ func (r *Registry) load() error {
     return nil
 }
 
+// Sets up a watch channel for any changes to the gsr registry so that the
+// Registry object can refresh its map of service endpoints when changes occur.
+func (r *Registry) setupWatch() error {
+    c := r.client
+    key := servicesKey()
+    debug("creating watch on %s", key)
+    r.watcher = c.Watch(context.Background(), key, etcd.WithPrefix())
+    go handleChanges(r)
+    return nil
+}
+
 // Registers an endpoint for a service type. This method is idempotent and
 // merely updates the registry's TTL for the endpoint if the endpoint already
 // is registered.
 func (r *Registry) register(service string, endpoint string) error {
-    eps, found := r.endpoints[service]
-
-    if ! found {
-        return r.newService(service, endpoint)
-    }
-
-    // have we already registered this endpoint in the Registry object? If so,
-    // all we want to do is refresh the lease on the endpoint entry in the etcd
-    // store
-    for _, ep := range(eps) {
-        if ep == endpoint {
-            debug("refreshing lease for endpoint %s in service %s", ep, service)
-            return nil
-        }
-    }
-    return nil
-}
-
-// Creates an entry for a brand new service type in the gsr registry
-func (r *Registry) newService(service string, endpoint string) error {
     c := r.client
-    eps := []string{endpoint}
-
-    debug("creating new registry entry for service %s: %v", service, eps)
-
     lease, err := c.Grant(context.TODO(), leaseTimeout())
     if err != nil {
         log.Printf("error: failed to grant lease in etcd: %v", err)
         return err
     }
+    r.lease = lease.ID
+    efound := false
+    eps, sfound := r.endpoints[service]
+
+    if sfound {
+        for _, ep := range(eps) {
+            if ep == endpoint {
+                efound = true
+            }
+        }
+    }
+    if ! efound {
+        err = r.newEndpoint(service, endpoint)
+        if err != nil {
+            return err
+        }
+    }
+
+    ch, err := c.KeepAlive(context.TODO(), r.lease)
+    if err != nil {
+        return err
+    }
+    r.heartbeat = ch
+    debug("started heartbeat channel for %s:%s", service, endpoint)
+    return nil
+}
+
+// Creates an entry for a brand new service type in the gsr registry
+func (r *Registry) newEndpoint(service string, endpoint string) error {
+    c := r.client
+
+    debug("creating new registry entry for %s:%s", service, endpoint)
 
     ekey := endpointKey(service, endpoint)
-    onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(lease.ID))
+    onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(r.lease))
     // Ensure the $PREFIX/services/$SERVICE/$ENDPOINT key doesn't yet exist
     compare := etcd.Compare(etcd.Version(ekey), "=", 0)
     ctx, cancel := requestCtx()
@@ -128,15 +149,67 @@ func (r *Registry) newService(service string, endpoint string) error {
     } else if resp.Succeeded == false {
         debug("concurrent write detected to key %v.", ekey)
     }
-    ch, err := c.KeepAlive(context.TODO(), lease.ID)
-    if err != nil {
-        log.Printf("error: failed to create keepalive in etcd: %v", err)
-        return err
+    eps, sfound := r.endpoints[service]
+    if ! sfound {
+        eps = []string{endpoint}
+    } else {
+        eps = append(eps, endpoint)
     }
     r.endpoints[service] = eps
     r.generation = resp.Header.Revision
-    r.heartbeat = ch
     return nil
+}
+
+// Reads the registry's watch channel and processes incoming events.
+func handleChanges(r *Registry) {
+    for cin := range(r.watcher) {
+        for _, ev := range(cin.Events) {
+            service, endpoint := partsFromKey(string(ev.Kv.Key))
+            switch ev.Type {
+                case etcd.EventTypeDelete:
+                    epfound := false
+                    if eps, sfound := r.endpoints[service]; sfound {
+                        eps = removeEndpoint(eps, endpoint, &epfound)
+                        if len(eps) == 0 {
+                            debug("no more endpoints in service %s. " +
+                                  "deleting +service from registry.",
+                                  service)
+                            delete(r.endpoints, service)
+                        }
+                        if epfound {
+                            debug("received endpoint delete notification. " +
+                                  "removed %s:%s from registry.",
+                                  service, endpoint)
+                            continue
+                        }
+                    }
+                    // If the endpoint or the service was not found, we
+                    // drop into the debug output below...
+                    debug("received endpoint delete notification for an " +
+                          "unknown endpoint: %s:%s. ignoring.",
+                          service, endpoint)
+                case etcd.EventTypePut:
+                    if eps, sfound := r.endpoints[service]; sfound {
+                        for _, v := range(eps) {
+                            if v == endpoint {
+                                debug("received endpoint create notification " +
+                                      "for %s:%s but already had endpoint " +
+                                      "in registry. ignoring.",
+                                      service, endpoint)
+                                continue
+                            }
+                        }
+                        eps = append(eps, endpoint)
+                        continue
+                    } else {
+                        r.endpoints[service] = []string{endpoint}
+                    }
+                    debug("received endpoint create notification. added " +
+                          "%s:%s to registry.", service, endpoint)
+            }
+            r.generation = ev.Kv.ModRevision
+        }
+    }
 }
 
 // Returns an etcd3 client using an exponential backoff and reconnect strategy.
@@ -265,6 +338,32 @@ func Start(service string, endpoint string) (*Registry, error) {
     }
     info("registered %s:%s", service, endpoint)
     return r, nil
+}
+
+// Given a full key, e.g. "gsr/services/web/127.0.0.1:80", returns the service
+// and endpoint as strings, e.g. "web", "127.0.0.1:80"
+func partsFromKey(key string) (string, string) {
+    parts := strings.Split(key[len(servicesKey()):], "/")
+    return parts[0], parts[1]
+}
+
+// Given a slice of endpoint strings, remove one of the endpoints from the
+// slice and return the resulting slice.
+func removeEndpoint(eps []string, endpoint string, found *bool) []string {
+    *found = true
+    idx := -1
+    for x, v := range(eps) {
+        if v == endpoint {
+            idx = x
+        }
+    }
+    if idx == -1 {
+        *found = false
+        return eps
+    }
+    numEps := len(eps)
+    eps[numEps - 1], eps[idx] = eps[idx], eps[numEps -1]
+    return eps[:numEps - 1]
 }
 
 func servicesKey() string {
