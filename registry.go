@@ -91,9 +91,20 @@ func (r *Registry) setupWatch() {
     go handleChanges(r)
 }
 
-// Registers an endpoint for a service type. This method is idempotent and
-// merely updates the registry's TTL for the endpoint if the endpoint already
-// is registered.
+// Sets up the channel heartbeat mechanism for the endpoint registered in this
+// Registry.
+func (r *Registry) setupHeartbeat() error {
+    c := r.client
+    ch, err := c.KeepAlive(context.TODO(), r.lease)
+    if err != nil {
+        return err
+    }
+    r.heartbeat = ch
+    return nil
+}
+
+// Registers an endpoint for a service type and sets up all necessary heartbeat
+// and watch mechanisms.
 func (r *Registry) register(service string, endpoint string) error {
     c := r.client
     lease, err := c.Grant(context.TODO(), leaseTimeout())
@@ -119,11 +130,10 @@ func (r *Registry) register(service string, endpoint string) error {
         }
     }
 
-    ch, err := c.KeepAlive(context.TODO(), r.lease)
+    err = r.setupHeartbeat()
     if err != nil {
         return err
     }
-    r.heartbeat = ch
     debug("started heartbeat channel for %s:%s", service, endpoint)
 
     r.setupWatch()
