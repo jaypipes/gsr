@@ -19,10 +19,10 @@ func TestStartBadAddress(t *testing.T) {
 
     r, err := Start("service", "endpoint")
     if err == nil {
-        t.Error("Expected error, but got nil.")
+        t.Fatal("Expected error, but got nil.")
     }
     if r != nil {
-        t.Errorf("Expected nil, but got %v.", r)
+        t.Fatalf("Expected nil, but got %v.", r)
     }
 }
 
@@ -46,14 +46,14 @@ func TestFunctional(t *testing.T) {
 
     r, err := Start(service, endpoint)
     if err != nil {
-        t.Errorf("Expected nil, but got %v.", err)
+        t.Fatalf("Expected nil, but got %v.", err)
     }
     if r == nil {
-        t.Error("Expected *gsr.Registry, but got nil.")
+        t.Fatal("Expected *gsr.Registry, but got nil.")
     }
 
     eps := r.Endpoints(service)
     if eps == nil {
-        t.Errorf("Expected []string, but got nil")
+        t.Fatalf("Expected []string, but got nil")
     }
 }
