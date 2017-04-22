@@ -1,13 +1,11 @@
-`gsr` - The Golang Service Registry library
-=============================================
+# `gsr` - The Golang Service Registry library
 
 `gsr` is a Golang library that can be used to provide service registration
 and discovery capabilities to Golang applications. `gsr`'s library interfaces
 are simple to use, simple to reason about, and importantly, do not require a
 particular container runtime.
 
-Overview
---------
+## Overview
 
 `gsr` uses `etcd` for storing its service registry. Within the `etcd` store,
 `gsr` sets up a series of keys representing services that have registered with
@@ -61,13 +59,11 @@ gsr
        -> 127.16.28.25:10000
 ```
 
-Usage
------
+## Usage
 
 `gsr` can be used for both service discovery and service registration.
 
-Service discovery
-~~~~~~~~~~~~~~~~~
+### Service discovery
 
 If you have a Golang application that needs to look up information about a
 required service that the application makes use of, you need *service
@@ -113,8 +109,7 @@ func main() {
 This strategy allows you to forego injecting service and endpoint configuration
 into environment variables of configuration files.
 
-Service registration
-~~~~~~~~~~~~~~~~~~~~
+### Service registration
 
 If you have a service application written in Golang, upon startup, you want the
 service to register itself with some system in order to allow other services to
@@ -163,8 +158,7 @@ func myAddr() string {
 ```
 
 
-Configuring `gsr`
------------------
+## Configuring
 
 In the spirit of 12-factor apps, `gsr` can be configured entirely by setting
 environment variables. Here is a list of environment variables that influence
