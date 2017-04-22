@@ -4,16 +4,16 @@ import (
     "log"
 )
 
-func contains(search string, in []string) bool {
+func contains(search string, in []*Endpoint) bool {
     for _, s := range(in) {
-        if s == search {
+        if s.Address == search {
             return true
         }
     }
     return false
 }
 
-func containsAll(all []string, in []string) bool {
+func containsAll(all []string, in []*Endpoint) bool {
     for _, each := range(all) {
         if ! contains(each, in) {
             return false

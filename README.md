@@ -64,8 +64,64 @@ gsr
 Usage
 -----
 
-Have a Golang application/service and want to use `gsr`? It's as simple as
-this:
+`gsr` can be used for both service discovery and service registration.
+
+Service discovery
+~~~~~~~~~~~~~~~~~
+
+If you have a Golang application that needs to look up information about a
+required service that the application makes use of, you need *service
+discovery* capabilities.
+
+The `gsr.Registry` struct can be used to discover information about services
+and their endpoints, as this example shows:
+
+```golang
+package main
+
+import (
+    "log"
+
+    "github.com/jaypipes/gsr"
+
+    "github.com/exampleorg/data"
+)
+
+func main() {
+    // Creates a new gsr.Registry instance that is connected to the gsr etcd
+    // registry
+    sr, err := gsr.NewRegistry()
+    if err != nil {
+         log.Fatalf("Failed to connect to gsr: %v.", err)
+    }
+
+    var dbConn *data.Connection
+
+    // Our application depends on a service called "data-access", so let's find
+    // the endpoints the service has so that we can query for data
+    dataEps := sr.Endpoints("data-access")
+    for _, ep := range(dataEps) {
+	// Try connecting to the data access service. This code is an example.
+	// Your service access code might look very different...
+        if dbConn, err := data.connect(ep.Address); err != nil {
+            log.Printf("Failed to connect to data access service: %v", err)
+        }
+    }
+}
+```
+
+This strategy allows you to forego injecting service and endpoint configuration
+into environment variables of configuration files.
+
+Service registration
+~~~~~~~~~~~~~~~~~~~~
+
+If you have a service application written in Golang, upon startup, you want the
+service to register itself with some system in order to allow other services to
+discover it. What you need is *service registration* functionality.
+
+The `gsr.Registry` struct can be used to register a service endpoint, as this
+example shows:
 
 ```golang
 package main
@@ -78,18 +134,21 @@ import (
 )
 
 func main() {
-    stype := "my-whizzbang-foo"
-    addr := myAddr()
-
-    sr, err := gsr.Start(stype, addr)
+    // Creates a new gsr.Registry instance that is connected to the gsr etcd
+    // registry
+    sr, err := gsr.NewRegistry()
     if err != nil {
-        log.Fatalf("unable to connect to gsr: %v", err)
+         log.Fatalf("Failed to connect to gsr: %v.", err)
     }
 
-    otherServiceType := "my-service-dep"
-    for _, endpoint := sr.Endpoints(otherServiceType) {
-        // Do something with endpoint... maybe connect to it, init a service
-        // client, etc
+    ep := gsr.Endpoint{
+        Service: &gsr.Service{"my-whizzbang-service"},
+        Address: myAddr(),
+    }
+
+    err := gsr.Register(&ep)
+    if err != nil {
+        log.Fatalf("unable to register %v with gsr: %v", svc, err)
     }
 }
 

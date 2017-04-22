@@ -13,7 +13,6 @@ package gsr
 //        -> /$ENDPOINT2
 
 import (
-    "fmt"
     "log"
     "net"
     "strings"
@@ -26,17 +25,28 @@ import (
     "github.com/cenkalti/backoff"
 )
 
-type Registry struct {
-    service string
-    endpoint string
-    client *etcd.Client
-    heartbeat <-chan *etcd.LeaseKeepAliveResponse
-    watcher etcd.WatchChan
+type Service struct {
+    Name string
+}
+
+type Endpoint struct {
+    Service *Service
+    Address string
     lease etcd.LeaseID
 }
 
+type Heartbeat struct {
+    ka <-chan *etcd.LeaseKeepAliveResponse
+}
+
+type Registry struct {
+    client *etcd.Client
+    watcher etcd.WatchChan
+    heartbeats map[*Endpoint]*Heartbeat
+}
+
 // Returns a list of endpoints for a requested service type.
-func (r *Registry) Endpoints(service string) ([]string) {
+func (r *Registry) Endpoints(service string) ([]*Endpoint) {
     c := r.client
     sort := etcd.WithSort(etcd.SortByKey, etcd.SortAscend)
     skey := serviceKey(service)
@@ -44,24 +54,28 @@ func (r *Registry) Endpoints(service string) ([]string) {
     resp, err := c.KV.Get(ctx, skey, etcd.WithPrefix(), sort)
     cancel()
     if err != nil {
-        r.debug("error looking up endpoints for service %s: %v",
+        debug("error looking up endpoints for service %s: %v",
                 service, err)
-        return []string{}
+        return []*Endpoint{}
     }
 
+    svc := Service{Name: service}
     numEps := resp.Count
-    r.debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
+    debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
 
     lenServicesKey := len(skey)
-    eps := make([]string, numEps)
+    eps := make([]*Endpoint, numEps)
     for x, kv := range(resp.Kvs) {
         key := kv.Key
         // The full key will be "$KEY_PREFIX/services/$SERVICE/$ENDPOINT
         parts := strings.Split(string(key[lenServicesKey:]), "/")
-        ep := parts[1]
-        eps[x] = ep
+        addr := parts[1]
+        eps[x] = &Endpoint{
+            Service: &svc,
+            Address: addr,
+        }
     }
-    r.debug("found endpoints %v", eps)
+    debug("found endpoints %v", eps)
     return eps
 }
 
@@ -70,63 +84,61 @@ func (r *Registry) Endpoints(service string) ([]string) {
 func (r *Registry) setupWatch() {
     c := r.client
     key := servicesKey()
-    r.debug("creating watch on %s", key)
+    debug("creating watch on %s", key)
     r.watcher = c.Watch(context.Background(), key, etcd.WithPrefix())
     go handleChanges(r)
 }
 
 // Sets up the channel heartbeat mechanism for the endpoint registered in this
 // Registry.
-func (r *Registry) setupHeartbeat() error {
+func (r *Registry) setupHeartbeat(ep *Endpoint) error {
     c := r.client
-    ch, err := c.KeepAlive(context.TODO(), r.lease)
+    ch, err := c.KeepAlive(context.TODO(), ep.lease)
     if err != nil {
         return err
     }
-    r.heartbeat = ch
+    r.heartbeats[ep] = &Heartbeat{ka: ch}
     return nil
 }
 
 // Registers an endpoint for a service type and sets up all necessary heartbeat
 // and watch mechanisms.
-func (r *Registry) register() error {
-    service := r.service
-    endpoint := r.endpoint
+func (r *Registry) Register(ep *Endpoint) error {
+    service := ep.Service.Name
+    addr := ep.Address
     c := r.client
     lease, err := c.Grant(context.TODO(), leaseTimeout())
     if err != nil {
         log.Printf("error: failed to grant lease in etcd: %v", err)
         return err
     }
-    r.lease = lease.ID
+    ep.lease = lease.ID
     eps := r.Endpoints(service)
-    if ! contains(endpoint, eps) {
-        err = r.createEndpoint()
+    if ! contains(addr, eps) {
+        err = r.createEndpoint(ep)
         if err != nil {
             return err
         }
     }
 
-    err = r.setupHeartbeat()
+    err = r.setupHeartbeat(ep)
     if err != nil {
         return err
     }
-    r.debug("started heartbeat channel")
-
-    r.setupWatch()
+    debug("started heartbeat channel")
     return nil
 }
 
-// Creates an entry for a brand new service type in the gsr registry
-func (r *Registry) createEndpoint() error {
-    service := r.service
-    endpoint := r.endpoint
+// Creates an entry for an endpoint in the gsr registry
+func (r *Registry) createEndpoint(ep *Endpoint) error {
+    service := ep.Service.Name
+    endpoint := ep.Address
     c := r.client
 
-    r.debug("creating new registry entry for %s:%s", service, endpoint)
+    debug("creating new registry entry for %s:%s", service, endpoint)
 
     ekey := endpointKey(service, endpoint)
-    onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(r.lease))
+    onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(ep.lease))
     // Ensure the $PREFIX/services/$SERVICE/$ENDPOINT key doesn't yet exist
     compare := etcd.Compare(etcd.Version(ekey), "=", 0)
     ctx, cancel := requestCtx()
@@ -137,7 +149,7 @@ func (r *Registry) createEndpoint() error {
         log.Printf("error: failed to create txn in etcd: %v", err)
         return err
     } else if resp.Succeeded == false {
-        r.debug("concurrent write detected to key %v.", ekey)
+        debug("concurrent write detected to key %v.", ekey)
     }
     return nil
 }
@@ -149,10 +161,10 @@ func handleChanges(r *Registry) {
             service, endpoint := partsFromKey(string(ev.Kv.Key))
             switch ev.Type {
                 case etcd.EventTypeDelete:
-                    r.debug("received notification that %s:%s was deleted. ",
+                    debug("received notification that %s:%s was deleted. ",
                             service, endpoint)
                 case etcd.EventTypePut:
-                    r.debug("received notification that %s:%s was created. ",
+                    debug("received notification that %s:%s was created. ",
                             service, endpoint)
             }
         }
@@ -264,33 +276,20 @@ func connect() (*etcd.Client, error) {
     return client, nil
 }
 
-func (r *Registry) debug(message string, args ...interface{}) {
-    message = fmt.Sprintf("%s:%s %s", r.service, r.endpoint, message)
-    debug(message, args...)
-}
-
-func (r *Registry) info(message string, args ...interface{}) {
-    message = fmt.Sprintf("%s:%s %s", r.service, r.endpoint, message)
-    info(message, args...)
-}
-
 // Creates a new gsr.Registry object, registers a service and endpoint with the
 // registry, and returns the registry object.
-func Start(service string, endpoint string) (*Registry, error) {
+func NewRegistry() (*Registry, error) {
     r := new(Registry)
-    r.service = service
-    r.endpoint = endpoint
     client, err := connect()
     if err != nil {
         return nil, err
     }
-    r.info("connected to registry.")
     r.client = client
-    err = r.register()
-    if err != nil {
-        return nil, err
-    }
-    r.info("registered %s:%s", service, endpoint)
+    info("connected to registry.")
+
+    r.heartbeats = make(map[*Endpoint]*Heartbeat, 0)
+
+    r.setupWatch()
     return r, nil
 }
 
