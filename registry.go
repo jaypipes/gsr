@@ -27,10 +27,9 @@ import (
 )
 
 type Registry struct {
-    id string
-    endpoints map[string][]string
+    service string
+    endpoint string
     client *etcd.Client
-    generation int64
     heartbeat <-chan *etcd.LeaseKeepAliveResponse
     watcher etcd.WatchChan
     lease etcd.LeaseID
@@ -38,49 +37,32 @@ type Registry struct {
 
 // Returns a list of endpoints for a requested service type.
 func (r *Registry) Endpoints(service string) ([]string) {
-    eps, found := r.endpoints[service]
-    if ! found {
-        return nil
-    }
-    return eps
-}
-
-// Loads all endpoints in the gsr registry
-func (r *Registry) load() error {
     c := r.client
     sort := etcd.WithSort(etcd.SortByKey, etcd.SortAscend)
-    skey := servicesKey()
+    skey := serviceKey(service)
     ctx, cancel := requestCtx()
     resp, err := c.KV.Get(ctx, skey, etcd.WithPrefix(), sort)
     cancel()
     if err != nil {
-        return err
+        r.debug("error looking up endpoints for service %s: %v",
+                service, err)
+        return []string{}
     }
 
-    curGen := resp.Header.Revision
-    r.debug("found initial generation of gsr registry: %d", curGen)
+    numEps := resp.Count
+    r.debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
 
-    // Set the stored registry generation to the entire key range's revision
-    r.generation = curGen
-
-    // The full key will be "$KEY_PREFIX/services/$SERVICE/$ENDPOINT
     lenServicesKey := len(skey)
-    eps := make(map[string][]string, 0)
-    for _, kv := range(resp.Kvs) {
+    eps := make([]string, numEps)
+    for x, kv := range(resp.Kvs) {
         key := kv.Key
+        // The full key will be "$KEY_PREFIX/services/$SERVICE/$ENDPOINT
         parts := strings.Split(string(key[lenServicesKey:]), "/")
-        service := parts[0]
-        endpoint := parts[1]
-        if _, created := eps[service]; ! created {
-            eps[service] = []string{endpoint}
-        } else {
-            eps[service] = append(eps[service], endpoint)
-        }
+        ep := parts[1]
+        eps[x] = ep
     }
     r.debug("found endpoints %v", eps)
-    r.endpoints = eps
-
-    return nil
+    return eps
 }
 
 // Sets up a watch channel for any changes to the gsr registry so that the
@@ -107,7 +89,9 @@ func (r *Registry) setupHeartbeat() error {
 
 // Registers an endpoint for a service type and sets up all necessary heartbeat
 // and watch mechanisms.
-func (r *Registry) register(service string, endpoint string) error {
+func (r *Registry) register() error {
+    service := r.service
+    endpoint := r.endpoint
     c := r.client
     lease, err := c.Grant(context.TODO(), leaseTimeout())
     if err != nil {
@@ -115,18 +99,9 @@ func (r *Registry) register(service string, endpoint string) error {
         return err
     }
     r.lease = lease.ID
-    efound := false
-    eps, sfound := r.endpoints[service]
-
-    if sfound {
-        for _, ep := range(eps) {
-            if ep == endpoint {
-                efound = true
-            }
-        }
-    }
-    if ! efound {
-        err = r.newEndpoint(service, endpoint)
+    eps := r.Endpoints(service)
+    if ! contains(endpoint, eps) {
+        err = r.createEndpoint()
         if err != nil {
             return err
         }
@@ -136,14 +111,16 @@ func (r *Registry) register(service string, endpoint string) error {
     if err != nil {
         return err
     }
-    r.debug("started heartbeat channel for %s:%s", service, endpoint)
+    r.debug("started heartbeat channel")
 
     r.setupWatch()
     return nil
 }
 
 // Creates an entry for a brand new service type in the gsr registry
-func (r *Registry) newEndpoint(service string, endpoint string) error {
+func (r *Registry) createEndpoint() error {
+    service := r.service
+    endpoint := r.endpoint
     c := r.client
 
     r.debug("creating new registry entry for %s:%s", service, endpoint)
@@ -162,14 +139,6 @@ func (r *Registry) newEndpoint(service string, endpoint string) error {
     } else if resp.Succeeded == false {
         r.debug("concurrent write detected to key %v.", ekey)
     }
-    eps, sfound := r.endpoints[service]
-    if ! sfound {
-        eps = []string{endpoint}
-    } else {
-        eps = append(eps, endpoint)
-    }
-    r.endpoints[service] = eps
-    r.generation = resp.Header.Revision
     return nil
 }
 
@@ -180,47 +149,12 @@ func handleChanges(r *Registry) {
             service, endpoint := partsFromKey(string(ev.Kv.Key))
             switch ev.Type {
                 case etcd.EventTypeDelete:
-                    epfound := false
-                    if eps, sfound := r.endpoints[service]; sfound {
-                        eps = removeEndpoint(eps, endpoint, &epfound)
-                        if len(eps) == 0 {
-                            r.debug("no more endpoints in service %s. " +
-                                   "deleting +service from registry.",
-                                   service)
-                            delete(r.endpoints, service)
-                        }
-                        if epfound {
-                            r.debug("received endpoint delete notification. " +
-                                    "removed %s:%s from registry.",
-                                    service, endpoint)
-                            continue
-                        }
-                    }
-                    // If the endpoint or the service was not found, we
-                    // drop into the debug output below...
-                    r.debug("received endpoint delete notification for an " +
-                            "unknown endpoint: %s:%s. ignoring.",
+                    r.debug("received notification that %s:%s was deleted. ",
                             service, endpoint)
                 case etcd.EventTypePut:
-                    if eps, sfound := r.endpoints[service]; sfound {
-                        for _, v := range(eps) {
-                            if v == endpoint {
-                                r.debug("received endpoint create "
-                                        "notification for %s:%s but already " +
-                                        "had endpoint in registry. ignoring.",
-                                        service, endpoint)
-                                continue
-                            }
-                        }
-                        eps = append(eps, endpoint)
-                        continue
-                    } else {
-                        r.endpoints[service] = []string{endpoint}
-                    }
-                    r.debug("received endpoint create notification. added " +
-                            "%s:%s to registry.", service, endpoint)
+                    r.debug("received notification that %s:%s was created. ",
+                            service, endpoint)
             }
-            r.generation = ev.Kv.ModRevision
         }
     }
 }
@@ -238,7 +172,7 @@ func connect() (*etcd.Client, error) {
 
     etcdEps := etcdEndpoints()
 
-    r.debug("connecting to etcd endpoints: %v.", etcdEps)
+    debug("connecting to etcd endpoints: %v.", etcdEps)
     cfg := etcd.Config{
         Endpoints: etcdEps,
         DialTimeout: time.Second,
@@ -261,21 +195,21 @@ func connect() (*etcd.Client, error) {
                         // Unknown host... probably a DNS failure and not
                         // something we're going to be able to recover from in
                         // a retry, to bail out
-                        r.debug("error: unknown host trying reach etcd " +
-                                "endpoint. unrecoverable error, so exiting.")
+                        debug("error: unknown host trying reach etcd " +
+                              "endpoint. unrecoverable error, so exiting.")
                         fatal = true
                         return err
                     } else if t.Op == "read" {
                         // Connection refused. This is an error we can backoff
-                        // and retry in case the application running gsr.New()
-                        // started before the etcd data store
+                        // and retry in case the application running
+                        // gsr.Start() started before the etcd data store
                         return err
                     }
                 case syscall.Errno:
                     if t == syscall.ECONNREFUSED {
                         // Connection refused. This is an error we can backoff
-                        // and retry in case the application running gsr.New()
-                        // started before the etcd data store
+                        // and retry in case the application running
+                        // gsr.Start() started before the etcd data store
                         return err
                     }
             }
@@ -295,8 +229,8 @@ func connect() (*etcd.Client, error) {
             if err == context.Canceled || err == context.DeadlineExceeded {
                 return err
             }
-            r.debug("error: failed attempting to get service registry: " +
-                    "%v. Exiting.")
+            debug("error: failed attempting to get service registry: " +
+                  "%v. Exiting.")
             fatal = true
             return err
         }
@@ -313,7 +247,7 @@ func connect() (*etcd.Client, error) {
             if fatal {
                 break
             }
-            r.debug("failed to get service registry: %v. retrying.", err)
+            debug("failed to get service registry: %v. retrying.", err)
             continue
         }
 
@@ -322,20 +256,21 @@ func connect() (*etcd.Client, error) {
     }
 
     if err != nil {
-        r.debug("failed to get service registry. final error reported: %v", err)
-        r.debug("attempted %d times over %v. exiting.", attempts, bo.GetElapsedTime().String())
+        debug("failed to get service registry. final error reported: %v", err)
+        debug("attempted %d times over %v. exiting.",
+              attempts, bo.GetElapsedTime().String())
         return nil, err
     }
     return client, nil
 }
 
 func (r *Registry) debug(message string, args ...interface{}) {
-    message = fmt.Sprintf("%s:%s", r.id, message)
+    message = fmt.Sprintf("%s:%s %s", r.service, r.endpoint, message)
     debug(message, args...)
 }
 
 func (r *Registry) info(message string, args ...interface{}) {
-    message = fmt.Sprintf("%s:%s", r.id, message)
+    message = fmt.Sprintf("%s:%s %s", r.service, r.endpoint, message)
     info(message, args...)
 }
 
@@ -343,20 +278,15 @@ func (r *Registry) info(message string, args ...interface{}) {
 // registry, and returns the registry object.
 func Start(service string, endpoint string) (*Registry, error) {
     r := new(Registry)
-    r.id = fmt.Sprintf("%s:%s", service, endpoint)
+    r.service = service
+    r.endpoint = endpoint
     client, err := connect()
     if err != nil {
         return nil, err
     }
     r.info("connected to registry.")
-    r.generation = 0
     r.client = client
-    err = r.load()
-    if err != nil {
-        return nil, err
-    }
-    r.info("loaded registry.")
-    err = r.register(service, endpoint)
+    err = r.register()
     if err != nil {
         return nil, err
     }

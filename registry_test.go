@@ -56,14 +56,7 @@ func TestFunctionalSimple(t *testing.T) {
     if eps == nil {
         t.Fatalf("Expected []string, but got nil")
     }
-    found = false
-    for _, ep := range(eps) {
-        if ep == ep1 {
-            found = true
-            break
-        }
-    }
-    if ! found {
+    if ! contains(ep1, eps) {
         t.Fatalf("Expected to find %s in %v.", ep1, eps)
     }
 }
@@ -87,6 +80,7 @@ func TestFunctionalConcurrency(t *testing.T) {
     service := "data-access"
     ep1 := "192.168.1.12"
     ep2 := "192.168.1.13"
+    ep1and2 := []string{ep1, ep2}
 
     r1, err := Start(service, ep1)
     if err != nil {
@@ -96,55 +90,16 @@ func TestFunctionalConcurrency(t *testing.T) {
         t.Fatal("Expected *gsr.Registry, but got nil.")
     }
 
-    eps1 := r1.Endpoints(service)
-    if eps1 == nil {
-        t.Fatalf("Expected []string, but got nil")
-    }
-    if ! contains(t, ep1, eps1) {
-        t.Fatalf("Expected to find %s in %v.", ep1, eps1)
+    if eps := r1.Endpoints(service); ! contains(ep1, eps)  {
+        t.Fatalf("Expected to find %s in %v.", ep1, eps)
     }
 
     r2, err := Start(service, ep2)
-    if err != nil {
-        t.Fatalf("Expected nil, but got %v.", err)
+    if eps := r2.Endpoints(service); ! containsAll(ep1and2, eps)  {
+        t.Fatalf("Expected to find %s in %v.", ep1and2, eps)
     }
-    if r2 == nil {
-        t.Fatal("Expected *gsr.Registry, but got nil.")
+    // first registry should find both endpoints now too
+    if eps := r1.Endpoints(service); ! containsAll(ep1and2, eps)  {
+        t.Fatalf("Expected to find %s in %v.", ep1and2, eps)
     }
-
-    eps2 := r2.Endpoints(service)
-    if eps2 == nil {
-        t.Fatalf("Expected []string, but got nil")
-    }
-    if ! contains(t, ep2, eps2) {
-        t.Fatalf("Expected to find %s in %v.", ep2, eps2)
-    }
-    // first endpoint should have been read into second service registry on
-    // load()
-    if ! contains(t, ep1, eps2) {
-        t.Fatalf("Expected to find %s in %v.", ep1, eps2)
-    }
-    // second service registry should have picked up the second registered
-    // service
-    if ! contains(t, ep2, eps1) {
-        t.Fatalf("Expected to find %s in %v.", ep2, eps1)
-    }
-}
-
-func contains(t *testing.T, search string, in []string) bool {
-    for _, s := range(in) {
-        if s == search {
-            return true
-        }
-    }
-    return false
-}
-
-func containsAll(t *testing.T, all []string, in []string) bool {
-    for _, each := range(all) {
-        if ! contains(t, each, in) {
-            return false
-        }
-    }
-    return true
 }
