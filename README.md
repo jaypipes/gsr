@@ -124,6 +124,7 @@ package main
 import (
     "log"
     "net"
+    "strings"
 
     "github.com/jaypipes/gsr"
 )
@@ -138,7 +139,7 @@ func main() {
 
     ep := gsr.Endpoint{
         Service: &gsr.Service{"my-whizzbang-service"},
-        Address: myAddr(),
+        Address: bindHost(),
     }
 
     err := gsr.Register(&ep)
@@ -147,13 +148,14 @@ func main() {
     }
 }
 
-func myAddr() string {
-    c := net.Dial("udp", "8.8.8.8:80")
+func bindHost() string {
+    c, err := net.Dial("udp", "8.8.8.8:80")
     if err != nil {
         log.Fatal(err)
     }
     defer c.Close()
-    return c.LocalAddr().String()
+    addr := c.LocalAddr().String()
+    return addr[:strings.LastIndex(addr, ":")]
 }
 ```
 

@@ -59,7 +59,6 @@ func (r *Registry) Endpoints(service string) ([]*Endpoint) {
         return []*Endpoint{}
     }
 
-    svc := Service{Name: service}
     numEps := resp.Count
     debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
 
@@ -69,13 +68,13 @@ func (r *Registry) Endpoints(service string) ([]*Endpoint) {
         key := kv.Key
         // The full key will be "$KEY_PREFIX/services/$SERVICE/$ENDPOINT
         parts := strings.Split(string(key[lenServicesKey:]), "/")
+        sname := parts[0]
         addr := parts[1]
         eps[x] = &Endpoint{
-            Service: &svc,
+            Service: &Service{Name: sname},
             Address: addr,
         }
     }
-    debug("found endpoints %v", eps)
     return eps
 }
 
