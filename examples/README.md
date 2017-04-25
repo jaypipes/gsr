@@ -156,3 +156,45 @@ web service knows about endpoints: [data:192.168.1.7:9000 web:192.168.1.7:8080]
 jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ curl http://192.168.1.7:9000/
 data service knows about endpoints: [data:192.168.1.7:9000 web:192.168.1.7:8080]
 ```
+
+## Step 8: Stop the data application and verify the data endpoint is removed from `gsr`
+
+OK, now we want to verify that when an application that has registered with
+`gsr` stops, that the corresponding endpoint in the `gsr` registry ends up
+being removed.
+
+So, let's stop the "data" application by simply entering Ctrl-c in our terminal
+window that has the "data" application running:
+
+```
+data$ GSR_ETCD_ENDPOINTS="http://172.16.28.68:2379" go run examples/cmd/data/main.go 
+2017/04/25 12:51:35 [data:192.168.1.7:9000] Starting data service on 192.168.1.7:9000.
+2017/04/25 12:51:35 [data:192.168.1.7:9000] Connecting to gsr.
+2017/04/25 12:51:35 [data:192.168.1.7:9000] Registering 192.168.1.7:9000 with gsr.
+2017/04/25 12:51:35 [data:192.168.1.7:9000] Listening for HTTP traffic on 192.168.1.7:9000.
+^Csignal: interrupt
+data$ 
+```
+
+We can check that the "web" application no longer sees the "data" endpoint in
+the `gsr` registry by making an HTTP request to the "web" application again or
+using the `etcdctl` CLI tool:
+
+```
+jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ ETCDCTL_API=3 etcdctl --endpoints="http://172.16.28.68:2379"  get --prefix gsr/services
+gsr/services/web/192.168.1.7:8080
+
+jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ curl http://192.168.1.7:8080/
+web service knows about endpoints: [web:192.168.1.7:8080]
+```
+
+**NOTE**: Behind the scenes, the "data" endpoint isn't actually *removed* from
+the `gsr` registry. Rather, what happens is there is a keepalive heartbeat that
+continually refreshes the TTL on the registered endpoint in `gsr` associated
+with the `gsr.Registry` object that an application uses. When the application
+shuts down and the `gsr.Registry` object is destroyed/garbage-collected, the
+TTL on the endpoint expires and other applications are no longer able to see
+the endpoint.
+
+You can control this keepalive/lease timeout using the `GSR_LEASE_SECONDS`
+environment variable, which defaults to 60 seconds.
