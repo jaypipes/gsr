@@ -28,6 +28,16 @@ func main() {
         log.Fatalf("Failed to connect to gsr registry: %v", err)
     }
 
+    info("Registering %s with gsr.", myAddr)
+    ep := gsr.Endpoint{
+        Service: &gsr.Service{Name: myServiceName},
+        Address: myAddr,
+    }
+    err = reg.Register(&ep)
+    if err != nil {
+        log.Fatalf("Failed to register with gsr: %v", err)
+    }
+
     info("Listening for HTTP traffic on %s.", myAddr)
     http.HandleFunc("/", handleHttp)
     log.Fatal(http.ListenAndServe(myAddr, nil))
