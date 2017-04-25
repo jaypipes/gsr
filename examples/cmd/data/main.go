@@ -10,11 +10,11 @@ import (
 )
 
 const (
-    myServiceName = "web"
+    myServiceName = "data"
 )
 
 var (
-    myAddr = util.BindHost() + ":8080"
+    myAddr = util.BindHost() + ":9000"
     reg *gsr.Registry
 )
 
@@ -56,3 +56,4 @@ func info(message string, args ...interface{}) {
     header := fmt.Sprintf("[%s:%s] ", myServiceName, myAddr)
     log.Printf(header + message, args...)
 }
+

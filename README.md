@@ -159,6 +159,10 @@ func bindHost() string {
 }
 ```
 
+**Need more example code?**
+
+If you need more example code, please check out the
+[README.md](examples/README.md) in the [examples/](examples/) directory.
 
 ## Configuring
 
