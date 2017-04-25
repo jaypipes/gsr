@@ -14,7 +14,7 @@ const (
 )
 
 var (
-    myAddr = util.BindHost() + ":8080"
+    myAddr = util.BindHost() + ":8081"
     reg *gsr.Registry
 )
 
@@ -49,7 +49,7 @@ func handleHttp(w http.ResponseWriter, r *http.Request) {
     for x, ep := range(eps) {
         out[x] = ep.Service.Name + ":" + ep.Address
     }
-    fmt.Fprintf(w, "Web service knows about endpoints: %v", out)
+    fmt.Fprintf(w, "%s service knows about endpoints: %v", myServiceName, out)
 }
 
 func info(message string, args ...interface{}) {
