@@ -20,8 +20,8 @@ import (
     "time"
 
     "golang.org/x/net/context"
+    "google.golang.org/grpc"
     etcd "github.com/coreos/etcd/clientv3"
-
     "github.com/cenkalti/backoff"
 )
 
@@ -177,13 +177,14 @@ func connect() (*etcd.Client, error) {
     var err error
     var client *etcd.Client
     fatal := false
-
-    bo := backoff.NewExponentialBackOff()
-    bo.MaxElapsedTime = etcdConnectTimeout()
-
+    connectTimeout := etcdConnectTimeout()
     etcdEps := etcdEndpoints()
 
-    debug("connecting to etcd endpoints: %v.", etcdEps)
+    bo := backoff.NewExponentialBackOff()
+    bo.MaxElapsedTime = connectTimeout
+
+    debug("connecting to etcd endpoints %v (w/ %s overall timeout).",
+          etcdEps, connectTimeout.String())
     cfg := etcd.Config{
         Endpoints: etcdEps,
         DialTimeout: time.Second,
@@ -192,6 +193,9 @@ func connect() (*etcd.Client, error) {
     fn := func() error {
         client, err = etcd.New(cfg)
         if err != nil {
+            if err == grpc.ErrClientConnTimeout {
+                return err  // retryable...
+            }
             switch t := err.(type) {
                 case *net.OpError:
                     oerr := err.(*net.OpError)
@@ -206,8 +210,17 @@ func connect() (*etcd.Client, error) {
                         // Unknown host... probably a DNS failure and not
                         // something we're going to be able to recover from in
                         // a retry, to bail out
-                        debug("error: unknown host trying reach etcd " +
-                              "endpoint. unrecoverable error, so exiting.")
+                        netProto := oerr.Net
+                        destAddr := oerr.Addr
+                        destAddrStr := "<unknown>"
+                        if destAddr != nil {
+                            destAddrStr = destAddr.String()
+                        }
+                        serr := oerr.Err
+                        debug("got unrecoverable network error: %v " +
+                              "attempting to connect over %s to %s. " +
+                              "exiting.",
+                              serr, netProto, destAddrStr)
                         fatal = true
                         return err
                     } else if t.Op == "read" {
@@ -223,12 +236,12 @@ func connect() (*etcd.Client, error) {
                         // gsr.Start() started before the etcd data store
                         return err
                     }
+                default:
+                    debug("got unrecoverable %T error: %v attempting to " +
+                          "connect to etcd", err, err)
+                    fatal = true
+                    return err
             }
-            if err == context.Canceled || err == context.DeadlineExceeded {
-                return err
-            }
-            fatal = true
-            return err
         }
         ctx, cancel := requestCtx()
         _, err = client.KV.Get(ctx, "/services", etcd.WithPrefix())
