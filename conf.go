@@ -25,14 +25,14 @@ func etcdEndpoints() []string {
     res := make([]string, len(eps))
     // Ensure endpoints begin with http[s]:// and contain a port. If missing,
     // add default etcd port.
-    for _, ep := range(eps) {
+    for x, ep := range(eps) {
         if ! strings.HasPrefix(ep, "http") {
             ep = "http://" + ep
         }
         if strings.Count(ep, ":") == 1 {
             ep = ep + ":2379"
         }
-        res = append(res, ep)
+        res[x] = ep
     }
     return res
 }
