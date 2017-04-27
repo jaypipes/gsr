@@ -193,8 +193,13 @@ func connect() (*etcd.Client, error) {
     fn := func() error {
         client, err = etcd.New(cfg)
         if err != nil {
-            if err == grpc.ErrClientConnTimeout {
-                return err  // retryable...
+            if (err == grpc.ErrClientConnTimeout ||
+                err == context.Canceled ||
+                err == context.DeadlineExceeded) {
+                // Each of these scenarios are errors that we can retry the
+                // operation. Services may come up in different order and we
+                // don't want to require a specific order of startup...
+                return err
             }
             switch t := err.(type) {
                 case *net.OpError:
@@ -242,21 +247,6 @@ func connect() (*etcd.Client, error) {
                     fatal = true
                     return err
             }
-        }
-        ctx, cancel := requestCtx()
-        _, err = client.KV.Get(ctx, "/services", etcd.WithPrefix())
-        cancel()
-        if err != nil {
-            // Each of these scenarios are errors that we can retry the
-            // operation. Services may come up in different order and we don't
-            // want to require a specific order of startup...
-            if err == context.Canceled || err == context.DeadlineExceeded {
-                return err
-            }
-            debug("error: failed attempting to get service registry: " +
-                  "%v. Exiting.")
-            fatal = true
-            return err
         }
         return nil
     }
