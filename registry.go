@@ -17,7 +17,6 @@ import (
     "net"
     "strings"
     "syscall"
-    "time"
 
     "golang.org/x/net/context"
     "google.golang.org/grpc"
@@ -187,7 +186,7 @@ func connect() (*etcd.Client, error) {
           etcdEps, connectTimeout.String())
     cfg := etcd.Config{
         Endpoints: etcdEps,
-        DialTimeout: time.Second,
+        DialTimeout: etcdDialTimeout(),
     }
 
     fn := func() error {

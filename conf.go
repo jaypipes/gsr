@@ -10,6 +10,7 @@ const (
     defaultEtcdKeyPrefix = "gsr/"
     defaultEtcdConnectTimeoutSeconds = 300
     defaultEtcdRequestTimeoutSeconds = 1
+    defaultEtcdDialTimeoutSeconds = 1
     defaultLogLevel = 0
     defaultLeaseSeconds = 60
 )
@@ -49,12 +50,24 @@ func etcdKeyPrefix() string {
 }
 
 // Returns the timeout, as time.Duration, of number of seconds gsr will try to
-// connect to etcd.
+// connect to etcd. This value is the entire length of time, including all
+// retries, that gsr will attempt to connect.
 func etcdConnectTimeout() time.Duration {
     return time.Duration(
         EnvOrDefaultInt(
             "GSR_ETCD_CONNECT_TIMEOUT_SECONDS",
             defaultEtcdConnectTimeoutSeconds,
+        ),
+    ) * time.Second
+}
+
+// Returns the timeout, as time.Duration, of number of seconds gsr will use for
+// the dial timeout connecting to etcd3 endpoints.
+func etcdDialTimeout() time.Duration {
+    return time.Duration(
+        EnvOrDefaultInt(
+            "GSR_ETCD_DIAL_TIMEOUT_SECONDS",
+            defaultEtcdDialTimeoutSeconds,
         ),
     ) * time.Second
 }

@@ -15,7 +15,15 @@ func TestNewRegistryBadAddress(t *testing.T) {
         defer os.Setenv("GSR_ETCD_ENDPOINTS", orig)
     }
 
+    orig, found = os.LookupEnv("GSR_ETCD_CONNECT_TIMEOUT_SECONDS")
+    if ! found {
+        defer os.Unsetenv("GSR_ETCD_CONNECT_TIMEOUT_SECONDS")
+    } else {
+        defer os.Setenv("GSR_ETCD_CONNECT_TIMEOUT_SECONDS", orig)
+    }
+
     os.Setenv("GSR_ETCD_ENDPOINTS", "badaddress!")
+    os.Setenv("GSR_ETCD_CONNECT_TIMEOUT_SECONDS", "1")
 
     r, err := NewRegistry()
     if err == nil {

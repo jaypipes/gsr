@@ -177,7 +177,10 @@ environment variables. Here is a list of environment variables that influence
    will store service and endpoint information. (default: `''`)
 
 * `GSR_ETCD_CONNECT_TIMEOUT_SECONDS`: the number of seconds to attempt to
-  connect to the `etcd` when calling `gsr.New()`. (default: `300`)
+  connect to the `etcd` when calling `gsr.NewRegistry()`. (default: `300`)
+
+* `GSR_ETCD_DIAL_TIMEOUT_SECONDS`: the number of seconds to use as the dial
+  timeout when attempting to connect to an `etcd` endpoint. (default: `1`)
 
 * `GSR_ETCD_REQUEST_TIMEOUT_SECONDS`: the number of seconds to set each `etcd`
   request timeout to, once connected. (default: `1`)
