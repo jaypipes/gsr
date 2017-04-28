@@ -321,18 +321,6 @@ func removeEndpoint(eps []string, endpoint string, found *bool) []string {
     return eps[:numEps - 1]
 }
 
-func servicesKey() string {
-    return etcdKeyPrefix() + "services/"
-}
-
-func serviceKey(service string) string {
-    return servicesKey() + service
-}
-
-func endpointKey(service string, endpoint string) string {
-    return serviceKey(service) + "/" + endpoint
-}
-
 func requestCtx() (context.Context, context.CancelFunc) {
     return context.WithTimeout(context.Background(), etcdRequestTimeout())
 }

@@ -70,6 +70,21 @@ func etcdRequestTimeout() time.Duration {
     ) * time.Second
 }
 
+// Returns the etcd key prefix representing the top-level "services" directory.
+func servicesKey() string {
+    return etcdKeyPrefix() + "services/"
+}
+
+// Returns the etcd key prefix for a specific service.
+func serviceKey(service string) string {
+    return servicesKey() + service
+}
+
+// Returns the etcd key for an endpoint within a service.
+func endpointKey(service string, endpoint string) string {
+    return serviceKey(service) + "/" + endpoint
+}
+
 // Returns the logging level for gsr.
 func logLevel() int {
     return EnvOrDefaultInt(

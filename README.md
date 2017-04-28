@@ -42,19 +42,19 @@ Assuming that your `GSR_KEY_PREFIX` environment variable is "gsr", the `gsr`
 registry in `etcd` would look like this:
 
 ```
-gsr
+/gsr
 |
 -> /services
    |
-   -> web
+   -> /web
        |
        -> 127.16.28.23:80
 
-   -> data-access
+   -> /data-access
        |
-       -> 127.16.28.24:10000\
+       -> 127.16.28.24:10000
 
-   -> background
+   -> /background
        |
        -> 127.16.28.25:10000
 ```
