@@ -177,20 +177,17 @@ func connect() (*etcd.Client, error) {
     var client *etcd.Client
     fatal := false
     connectTimeout := etcdConnectTimeout()
-    etcdEps := etcdEndpoints()
+    cfg := etcdConfig()
+    etcdEps := cfg.Endpoints
 
     bo := backoff.NewExponentialBackOff()
     bo.MaxElapsedTime = connectTimeout
 
     debug("connecting to etcd endpoints %v (w/ %s overall timeout).",
           etcdEps, connectTimeout.String())
-    cfg := etcd.Config{
-        Endpoints: etcdEps,
-        DialTimeout: etcdDialTimeout(),
-    }
 
     fn := func() error {
-        client, err = etcd.New(cfg)
+        client, err = etcd.New(*cfg)
         if err != nil {
             if (err == grpc.ErrClientConnTimeout ||
                 err == context.Canceled ||

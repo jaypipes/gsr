@@ -3,6 +3,8 @@ package gsr
 import (
     "strings"
     "time"
+
+    etcd "github.com/coreos/etcd/clientv3"
 )
 
 const (
@@ -14,6 +16,14 @@ const (
     defaultLogLevel = 0
     defaultLeaseSeconds = 60
 )
+
+// Returns an etcd configuration struct populated with all configured options.
+func etcdConfig() *etcd.Config {
+    return &etcd.Config{
+        Endpoints: etcdEndpoints(),
+        DialTimeout: etcdDialTimeout(),
+    }
+}
 
 // Returns the set of etcd3 endpoints used by gsr.
 func etcdEndpoints() []string {
