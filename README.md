@@ -185,6 +185,15 @@ environment variables. Here is a list of environment variables that influence
 * `GSR_ETCD_REQUEST_TIMEOUT_SECONDS`: the number of seconds to set each `etcd`
   request timeout to, once connected. (default: `1`)
 
+* `GSR_USE_TLS`: 0 (default) if communication with etcd should be secured with
+  TLS.
+
+* `GSR_TLS_CERT_PATH`: Path to the certificate file to use if TLS is used.
+  (default: "/etc/gsr/server.pem")
+
+* `GSR_TLS_KEY_PATH`: Path to the private key file to use if TLS is used.
+  (default: "/etc/gsr/server.key")
+
 * `GSR_LOG_LEVEL`: an integer representing the verbosity of logging. The higher
   the number, the more verbose. (default: `0` almost no output during normal
   operation)

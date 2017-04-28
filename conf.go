@@ -1,6 +1,9 @@
 package gsr
 
 import (
+    "crypto/tls"
+    "io/ioutil"
+    "path/filepath"
     "strings"
     "time"
 
@@ -8,21 +11,94 @@ import (
 )
 
 const (
+    cfgPath = "/etc/gsr"
     defaultEtcdEndpoints = "http://127.0.0.1:2379"
     defaultEtcdKeyPrefix = "gsr/"
     defaultEtcdConnectTimeoutSeconds = 300
     defaultEtcdRequestTimeoutSeconds = 1
     defaultEtcdDialTimeoutSeconds = 1
+    defaultUseTls = false
     defaultLogLevel = 0
     defaultLeaseSeconds = 60
 )
+
+var (
+    defaultTlsCertPath = filepath.Join(cfgPath, "server.pem")
+    defaultTlsKeyPath = filepath.Join(cfgPath, "server.key")
+)
+
+// Returns the path to the TLS cert to use.
+func tlsCertPath() string {
+    return EnvOrDefaultStr(
+        "GSR_TLS_CERT_PATH",
+        defaultTlsCertPath,
+    )
+}
+
+// Returns the path to the TLS cert to use.
+func tlsKeyPath() string {
+    return EnvOrDefaultStr(
+        "GSR_TLS_KEY_PATH",
+        defaultTlsKeyPath,
+    )
+}
 
 // Returns an etcd configuration struct populated with all configured options.
 func etcdConfig() *etcd.Config {
     return &etcd.Config{
         Endpoints: etcdEndpoints(),
         DialTimeout: etcdDialTimeout(),
+        TLS: tlsConfig(),
     }
+}
+
+// Returns the TLS configuration struct to use with etcd client.
+func tlsConfig() *tls.Config {
+    cfg := &tls.Config{}
+
+    if ! useTls() {
+        return nil
+    }
+
+    certPath := tlsCertPath()
+    keyPath := tlsKeyPath()
+
+    if certPath == "" || keyPath == "" {
+        debug("error setting up TLS configuration. Either cert or " +
+              "key path not specified.")
+        return nil
+    }
+
+    certContent, err := ioutil.ReadFile(certPath)
+    if err != nil {
+        debug("error getting cert content: %v", err)
+        return nil
+    }
+
+    keyContent, err := ioutil.ReadFile(keyPath)
+    if err != nil {
+        debug("error getting key content: %v", err)
+        return nil
+    }
+
+    kp, err := tls.X509KeyPair(certContent, keyContent)
+    if err != nil {
+        debug("error setting up TLS cert: %v.", err)
+        return nil
+    }
+
+    cfg.MinVersion = tls.VersionTLS10
+    cfg.InsecureSkipVerify = false
+    cfg.Certificates = []tls.Certificate{kp}
+    return cfg
+}
+
+// Returns whether or not to use TLS in communicating with etcd.
+func useTls() bool {
+    return EnvOrDefaultBool(
+        "GSR_USE_TLS",
+        defaultUseTls,
+    )
 }
 
 // Returns the set of etcd3 endpoints used by gsr.
