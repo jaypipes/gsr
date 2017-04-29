@@ -250,14 +250,13 @@ func connect() (*etcd.Client, error) {
     ticker := backoff.NewTicker(bo)
 
     attempts:= 0
-    debug("grabbing service registry from etcd.")
     for _ = range ticker.C {
         if err = fn(); err != nil {
             attempts += 1
             if fatal {
                 break
             }
-            debug("failed to get service registry: %v. retrying.", err)
+            debug("failed to connect to gsr: %v. retrying.", err)
             continue
         }
 
@@ -266,7 +265,7 @@ func connect() (*etcd.Client, error) {
     }
 
     if err != nil {
-        debug("failed to get service registry. final error reported: %v", err)
+        debug("failed to connect to gsr. final error reported: %v", err)
         debug("attempted %d times over %v. exiting.",
               attempts, bo.GetElapsedTime().String())
         return nil, err
