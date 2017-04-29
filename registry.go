@@ -208,33 +208,29 @@ func connect() (*etcd.Client, error) {
                         return err
                     }
                     if t.Op == "dial" {
-                        // Unknown host... probably a DNS failure and not
-                        // something we're going to be able to recover from in
-                        // a retry, to bail out
-                        netProto := oerr.Net
                         destAddr := oerr.Addr
-                        destAddrStr := "<unknown>"
-                        if destAddr != nil {
-                            destAddrStr = destAddr.String()
+                        if destAddr == nil {
+                            // Unknown host... probably a DNS failure and not
+                            // something we're going to be able to recover from in
+                            // a retry, so bail out
+                            fatal = true
                         }
-                        serr := oerr.Err
-                        debug("got unrecoverable network error: %v " +
-                              "attempting to connect over %s to %s. " +
-                              "exiting.",
-                              serr, netProto, destAddrStr)
-                        fatal = true
+                        // If not unknown host, most likely a dial: tcp
+                        // connection refused. In that case, let's retry. etcd
+                        // may not have been brought up before the calling
+                        // application/service..
                         return err
                     } else if t.Op == "read" {
-                        // Connection refused. This is an error we can backoff
-                        // and retry in case the application running
-                        // gsr.Start() started before the etcd data store
+                        // connection refused. In that case, let's retry. etcd
+                        // may not have been brought up before the calling
+                        // application/service..
                         return err
                     }
                 case syscall.Errno:
                     if t == syscall.ECONNREFUSED {
-                        // Connection refused. This is an error we can backoff
-                        // and retry in case the application running
-                        // gsr.Start() started before the etcd data store
+                        // connection refused. In that case, let's retry. etcd
+                        // may not have been brought up before the calling
+                        // application/service..
                         return err
                     }
                 default:
