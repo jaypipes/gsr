@@ -271,7 +271,7 @@ func connect() (*etcd.Client, error) {
 
 // Creates a new gsr.Registry object, registers a service and endpoint with the
 // registry, and returns the registry object.
-func NewRegistry() (*Registry, error) {
+func New() (*Registry, error) {
     r := new(Registry)
     client, err := connect()
     if err != nil {

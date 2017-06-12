@@ -5,8 +5,8 @@ import (
     "testing"
 )
 
-func TestNewRegistryBadAddress(t *testing.T) {
-    // Set the environs variables to a known bad address and ensure that NewRegistry()
+func TestNewBadAddress(t *testing.T) {
+    // Set the environs variables to a known bad address and ensure that New()
     // returns an error and a nil Registry pointer.
     orig, found := os.LookupEnv("GSR_ETCD_ENDPOINTS")
     if ! found {
@@ -25,7 +25,7 @@ func TestNewRegistryBadAddress(t *testing.T) {
     os.Setenv("GSR_ETCD_ENDPOINTS", "badaddress!")
     os.Setenv("GSR_ETCD_CONNECT_TIMEOUT_SECONDS", "1")
 
-    r, err := NewRegistry()
+    r, err := New()
     if err == nil {
         t.Fatal("Expected error, but got nil.")
     }
@@ -56,7 +56,7 @@ func TestFunctionalSimple(t *testing.T) {
         Address: addr,
     }
 
-    r, err := NewRegistry()
+    r, err := New()
     if err != nil {
         t.Fatalf("Expected nil, but got %v.", err)
     }
@@ -106,7 +106,7 @@ func TestFunctionalConcurrency(t *testing.T) {
         Address: addr2,
     }
 
-    r1, err := NewRegistry()
+    r1, err := New()
     if err != nil {
         t.Fatalf("Expected nil, but got %v.", err)
     }
@@ -122,7 +122,7 @@ func TestFunctionalConcurrency(t *testing.T) {
         t.Fatalf("Expected to find %s in %v.", addr1, eps)
     }
 
-    r2, err := NewRegistry()
+    r2, err := New()
     if err != nil {
         t.Fatalf("Expected nil, but got %v.", err)
     }
