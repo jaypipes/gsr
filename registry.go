@@ -39,27 +39,69 @@ type Heartbeat struct {
 }
 
 type Registry struct {
+    config *Config
     client *etcd.Client
     watcher etcd.WatchChan
     heartbeats map[*Endpoint]*Heartbeat
+}
+
+// Returns the etcd key prefix representing the top-level "services" directory.
+func (r *Registry) servicesKey() string {
+    return r.config.EtcdKeyPrefix + "services/"
+}
+
+// Returns the etcd key prefix for a specific service.
+func (r *Registry) serviceKey(service string) string {
+    return r.servicesKey() + service
+}
+
+// Returns the etcd key for an endpoint within a service.
+func (r *Registry) endpointKey(service string, endpoint string) string {
+    return r.serviceKey(service) + "/" + endpoint
+}
+
+func (r *Registry) requestCtx() (context.Context, context.CancelFunc) {
+    return context.WithTimeout(
+        context.Background(),
+        r.config.EtcdRequestTimeoutSeconds,
+    )
+}
+
+// Given a full key, e.g. "gsr/services/web/127.0.0.1:80", returns the service
+// and endpoint as strings, e.g. "web", "127.0.0.1:80"
+func (r *Registry) partsFromKey(key string) (string, string) {
+    parts := strings.Split(key[len(r.servicesKey()):], "/")
+    return parts[0], parts[1]
+}
+
+func (r *Registry) debug(message string, args ...interface{}) {
+    if r.config.LogLevel > 1 {
+        log.Printf("[gsr] debug: " + message, args...)
+    }
+}
+
+func (r *Registry) info(message string, args ...interface{}) {
+    if r.config.LogLevel > 0 {
+        log.Printf("[gsr] " + message, args...)
+    }
 }
 
 // Returns a list of endpoints for a requested service type.
 func (r *Registry) Endpoints(service string) ([]*Endpoint) {
     c := r.client
     sort := etcd.WithSort(etcd.SortByKey, etcd.SortAscend)
-    skey := serviceKey(service)
-    ctx, cancel := requestCtx()
+    skey := r.serviceKey(service)
+    ctx, cancel := r.requestCtx()
     resp, err := c.KV.Get(ctx, skey, etcd.WithPrefix(), sort)
     cancel()
     if err != nil {
-        debug("error looking up endpoints for service %s: %v",
+        r.debug("error looking up endpoints for service %s: %v",
                 service, err)
         return []*Endpoint{}
     }
 
     numEps := resp.Count
-    debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
+    r.debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
 
     lenServicesKey := len(skey)
     eps := make([]*Endpoint, numEps)
@@ -81,8 +123,8 @@ func (r *Registry) Endpoints(service string) ([]*Endpoint) {
 // Registry object can refresh its map of service endpoints when changes occur.
 func (r *Registry) setupWatch() {
     c := r.client
-    key := servicesKey()
-    debug("creating watch on %s", key)
+    key := r.servicesKey()
+    r.debug("creating watch on %s", key)
     r.watcher = c.Watch(context.Background(), key, etcd.WithPrefix())
     go handleChanges(r)
 }
@@ -105,7 +147,7 @@ func (r *Registry) Register(ep *Endpoint) error {
     service := ep.Service.Name
     addr := ep.Address
     c := r.client
-    lease, err := c.Grant(context.TODO(), leaseTimeout())
+    lease, err := c.Grant(context.TODO(), r.config.LeaseSeconds)
     if err != nil {
         log.Printf("error: failed to grant lease in etcd: %v", err)
         return err
@@ -123,7 +165,7 @@ func (r *Registry) Register(ep *Endpoint) error {
     if err != nil {
         return err
     }
-    debug("started heartbeat channel")
+    r.debug("started heartbeat channel")
     return nil
 }
 
@@ -133,13 +175,13 @@ func (r *Registry) createEndpoint(ep *Endpoint) error {
     endpoint := ep.Address
     c := r.client
 
-    debug("creating new registry entry for %s:%s", service, endpoint)
+    r.debug("creating new registry entry for %s:%s", service, endpoint)
 
-    ekey := endpointKey(service, endpoint)
+    ekey := r.endpointKey(service, endpoint)
     onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(ep.lease))
     // Ensure the $PREFIX/services/$SERVICE/$ENDPOINT key doesn't yet exist
     compare := etcd.Compare(etcd.Version(ekey), "=", 0)
-    ctx, cancel := requestCtx()
+    ctx, cancel := r.requestCtx()
     resp, err := c.KV.Txn(ctx).If(compare).Then(onSuccess).Commit()
     cancel()
 
@@ -147,7 +189,7 @@ func (r *Registry) createEndpoint(ep *Endpoint) error {
         log.Printf("error: failed to create txn in etcd: %v", err)
         return err
     } else if resp.Succeeded == false {
-        debug("concurrent write detected to key %v.", ekey)
+        r.debug("concurrent write detected to key %v.", ekey)
     }
     return nil
 }
@@ -156,13 +198,13 @@ func (r *Registry) createEndpoint(ep *Endpoint) error {
 func handleChanges(r *Registry) {
     for cin := range(r.watcher) {
         for _, ev := range(cin.Events) {
-            service, endpoint := partsFromKey(string(ev.Kv.Key))
+            service, endpoint := r.partsFromKey(string(ev.Kv.Key))
             switch ev.Type {
                 case etcd.EventTypeDelete:
-                    debug("received notification that %s:%s was deleted. ",
+                    r.debug("received notification that %s:%s was deleted. ",
                             service, endpoint)
                 case etcd.EventTypePut:
-                    debug("received notification that %s:%s was created. ",
+                    r.debug("received notification that %s:%s was created. ",
                             service, endpoint)
             }
         }
@@ -172,18 +214,18 @@ func handleChanges(r *Registry) {
 // Returns an etcd3 client using an exponential backoff and reconnect strategy.
 // This is to be tolerant of the etcd infrastructure VMs/containers starting
 // *after* a service that requires it.
-func connect() (*etcd.Client, error) {
+func (r *Registry) connect() (*etcd.Client, error) {
     var err error
     var client *etcd.Client
     fatal := false
-    connectTimeout := etcdConnectTimeout()
-    cfg := etcdConfig()
+    connectTimeout := r.config.EtcdConnectTimeoutSeconds
+    cfg := r.config.EtcdConfig()
     etcdEps := cfg.Endpoints
 
     bo := backoff.NewExponentialBackOff()
     bo.MaxElapsedTime = connectTimeout
 
-    debug("connecting to etcd endpoints %v (w/ %s overall timeout).",
+    r.debug("connecting to etcd endpoints %v (w/ %s overall timeout).",
           etcdEps, connectTimeout.String())
 
     fn := func() error {
@@ -234,7 +276,7 @@ func connect() (*etcd.Client, error) {
                         return err
                     }
                 default:
-                    debug("got unrecoverable %T error: %v attempting to " +
+                    r.debug("got unrecoverable %T error: %v attempting to " +
                           "connect to etcd", err, err)
                     fatal = true
                     return err
@@ -252,7 +294,7 @@ func connect() (*etcd.Client, error) {
             if fatal {
                 break
             }
-            debug("failed to connect to gsr: %v. retrying.", err)
+            r.debug("failed to connect to gsr: %v. retrying.", err)
             continue
         }
 
@@ -261,8 +303,8 @@ func connect() (*etcd.Client, error) {
     }
 
     if err != nil {
-        debug("failed to connect to gsr. final error reported: %v", err)
-        debug("attempted %d times over %v. exiting.",
+        r.debug("failed to connect to gsr. final error reported: %v", err)
+        r.debug("attempted %d times over %v. exiting.",
               attempts, bo.GetElapsedTime().String())
         return nil, err
     }
@@ -273,24 +315,18 @@ func connect() (*etcd.Client, error) {
 // registry, and returns the registry object.
 func New() (*Registry, error) {
     r := new(Registry)
-    client, err := connect()
+    r.config = configFromEnv()
+    client, err := r.connect()
     if err != nil {
         return nil, err
     }
     r.client = client
-    info("connected to registry.")
+    r.info("connected to registry.")
 
     r.heartbeats = make(map[*Endpoint]*Heartbeat, 0)
 
     r.setupWatch()
     return r, nil
-}
-
-// Given a full key, e.g. "gsr/services/web/127.0.0.1:80", returns the service
-// and endpoint as strings, e.g. "web", "127.0.0.1:80"
-func partsFromKey(key string) (string, string) {
-    parts := strings.Split(key[len(servicesKey()):], "/")
-    return parts[0], parts[1]
 }
 
 // Given a slice of endpoint strings, remove one of the endpoints from the
@@ -310,8 +346,4 @@ func removeEndpoint(eps []string, endpoint string, found *bool) []string {
     numEps := len(eps)
     eps[numEps - 1], eps[idx] = eps[idx], eps[numEps -1]
     return eps[:numEps - 1]
-}
-
-func requestCtx() (context.Context, context.CancelFunc) {
-    return context.WithTimeout(context.Background(), etcdRequestTimeout())
 }
