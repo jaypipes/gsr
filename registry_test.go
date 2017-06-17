@@ -37,7 +37,7 @@ func TestNewBadAddress(t *testing.T) {
 func TestFunctionalSimple(t *testing.T) {
     testEps, found := os.LookupEnv("GSR_TEST_ETCD_ENDPOINTS")
     if ! found {
-        t.Skip("GSRT_TEST_ETCD_ENDPOINTS not set. Skipping functional test.")
+        t.Skip("GSR_TEST_ETCD_ENDPOINTS not set. Skipping functional test.")
     }
 
     orig, found := os.LookupEnv("GSR_ETCD_ENDPOINTS")
@@ -80,7 +80,7 @@ func TestFunctionalSimple(t *testing.T) {
 func TestFunctionalConcurrency(t *testing.T) {
     testEps, found := os.LookupEnv("GSR_TEST_ETCD_ENDPOINTS")
     if ! found {
-        t.Skip("GSRT_TEST_ETCD_ENDPOINTS not set. Skipping functional " +
+        t.Skip("GSR_TEST_ETCD_ENDPOINTS not set. Skipping functional " +
                "concurrency test.")
     }
 
