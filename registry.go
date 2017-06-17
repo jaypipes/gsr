@@ -15,6 +15,7 @@ package gsr
 import (
     "log"
     "net"
+    "os"
     "strings"
     "syscall"
 
@@ -38,8 +39,15 @@ type Heartbeat struct {
     ka <-chan *etcd.LeaseKeepAliveResponse
 }
 
+type registryLogs struct {
+    elog *log.Logger
+    log1 *log.Logger
+    log2 *log.Logger
+}
+
 type Registry struct {
     config *Config
+    logs *registryLogs
     client *etcd.Client
     watcher etcd.WatchChan
     heartbeats map[*Endpoint]*Heartbeat
@@ -74,15 +82,28 @@ func (r *Registry) partsFromKey(key string) (string, string) {
     return parts[0], parts[1]
 }
 
-func (r *Registry) debug(message string, args ...interface{}) {
-    if r.config.LogLevel > 1 {
-        log.Printf("[gsr] debug: " + message, args...)
+func (r *Registry) LERR(message string, args ...interface{}) {
+    if r.logs.elog == nil {
+        return
+    }
+    r.logs.elog.Printf("[gsr] ERROR: " + message, args...)
+}
+
+func (r *Registry) L1(message string, args ...interface{}) {
+    if r.logs.log1 == nil {
+        return
+    }
+    if r.config.LogLevel > 0 {
+        r.logs.log1.Printf("[gsr] " + message, args...)
     }
 }
 
-func (r *Registry) info(message string, args ...interface{}) {
-    if r.config.LogLevel > 0 {
-        log.Printf("[gsr] " + message, args...)
+func (r *Registry) L2(message string, args ...interface{}) {
+    if r.logs.log2 == nil {
+        return
+    }
+    if r.config.LogLevel > 1 {
+        r.logs.log2.Printf("[gsr] " + message, args...)
     }
 }
 
@@ -95,13 +116,13 @@ func (r *Registry) Endpoints(service string) ([]*Endpoint) {
     resp, err := c.KV.Get(ctx, skey, etcd.WithPrefix(), sort)
     cancel()
     if err != nil {
-        r.debug("error looking up endpoints for service %s: %v",
-                service, err)
+        r.L2("error looking up endpoints for service %s: %v",
+             service, err)
         return []*Endpoint{}
     }
 
     numEps := resp.Count
-    r.debug("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
+    r.L2("read %d endpoints @ generation %d", numEps, resp.Header.Revision)
 
     lenServicesKey := len(skey)
     eps := make([]*Endpoint, numEps)
@@ -124,7 +145,7 @@ func (r *Registry) Endpoints(service string) ([]*Endpoint) {
 func (r *Registry) setupWatch() {
     c := r.client
     key := r.servicesKey()
-    r.debug("creating watch on %s", key)
+    r.L2("creating watch on %s", key)
     r.watcher = c.Watch(context.Background(), key, etcd.WithPrefix())
     go handleChanges(r)
 }
@@ -149,7 +170,7 @@ func (r *Registry) Register(ep *Endpoint) error {
     c := r.client
     lease, err := c.Grant(context.TODO(), r.config.LeaseSeconds)
     if err != nil {
-        log.Printf("error: failed to grant lease in etcd: %v", err)
+        r.LERR("failed to grant lease in etcd: %v", err)
         return err
     }
     ep.lease = lease.ID
@@ -165,7 +186,7 @@ func (r *Registry) Register(ep *Endpoint) error {
     if err != nil {
         return err
     }
-    r.debug("started heartbeat channel")
+    r.L2("started heartbeat channel")
     return nil
 }
 
@@ -175,7 +196,7 @@ func (r *Registry) createEndpoint(ep *Endpoint) error {
     endpoint := ep.Address
     c := r.client
 
-    r.debug("creating new registry entry for %s:%s", service, endpoint)
+    r.L2("creating new registry entry for %s:%s", service, endpoint)
 
     ekey := r.endpointKey(service, endpoint)
     onSuccess := etcd.OpPut(ekey, "", etcd.WithLease(ep.lease))
@@ -186,10 +207,10 @@ func (r *Registry) createEndpoint(ep *Endpoint) error {
     cancel()
 
     if err != nil {
-        log.Printf("error: failed to create txn in etcd: %v", err)
+        r.LERR("failed to create txn in etcd: %v", err)
         return err
     } else if resp.Succeeded == false {
-        r.debug("concurrent write detected to key %v.", ekey)
+        r.L2("concurrent write detected to key %v.", ekey)
     }
     return nil
 }
@@ -201,11 +222,11 @@ func handleChanges(r *Registry) {
             service, endpoint := r.partsFromKey(string(ev.Kv.Key))
             switch ev.Type {
                 case etcd.EventTypeDelete:
-                    r.debug("received notification that %s:%s was deleted. ",
-                            service, endpoint)
+                    r.L2("received notification that %s:%s was deleted. ",
+                         service, endpoint)
                 case etcd.EventTypePut:
-                    r.debug("received notification that %s:%s was created. ",
-                            service, endpoint)
+                    r.L2("received notification that %s:%s was created. ",
+                         service, endpoint)
             }
         }
     }
@@ -225,8 +246,8 @@ func (r *Registry) connect() (*etcd.Client, error) {
     bo := backoff.NewExponentialBackOff()
     bo.MaxElapsedTime = connectTimeout
 
-    r.debug("connecting to etcd endpoints %v (w/ %s overall timeout).",
-          etcdEps, connectTimeout.String())
+    r.L2("connecting to etcd endpoints %v (w/ %s overall timeout).",
+         etcdEps, connectTimeout.String())
 
     fn := func() error {
         client, err = etcd.New(*cfg)
@@ -276,8 +297,8 @@ func (r *Registry) connect() (*etcd.Client, error) {
                         return err
                     }
                 default:
-                    r.debug("got unrecoverable %T error: %v attempting to " +
-                          "connect to etcd", err, err)
+                    r.L2("got unrecoverable %T error: %v attempting to " +
+                         "connect to etcd", err, err)
                     fatal = true
                     return err
             }
@@ -294,7 +315,7 @@ func (r *Registry) connect() (*etcd.Client, error) {
             if fatal {
                 break
             }
-            r.debug("failed to connect to gsr: %v. retrying.", err)
+            r.L2("failed to connect to gsr: %v. retrying.", err)
             continue
         }
 
@@ -303,9 +324,9 @@ func (r *Registry) connect() (*etcd.Client, error) {
     }
 
     if err != nil {
-        r.debug("failed to connect to gsr. final error reported: %v", err)
-        r.debug("attempted %d times over %v. exiting.",
-              attempts, bo.GetElapsedTime().String())
+        r.LERR("failed to connect to gsr. final error reported: %v", err)
+        r.L2("attempted %d times over %v. exiting.",
+             attempts, bo.GetElapsedTime().String())
         return nil, err
     }
     return client, nil
@@ -316,12 +337,29 @@ func (r *Registry) connect() (*etcd.Client, error) {
 func New() (*Registry, error) {
     r := new(Registry)
     r.config = configFromEnv()
+    r.logs = &registryLogs{
+        elog: log.New(
+            os.Stderr,
+            "",
+            (log.Ldate | log.Ltime | log.LUTC),
+        ),
+        log1: log.New(
+            os.Stdout,
+            "",
+            (log.Ldate | log.Ltime | log.LUTC),
+        ),
+        log2: log.New(
+            os.Stdout,
+            "",
+            (log.Ldate | log.Ltime | log.LUTC),
+        ),
+    }
     client, err := r.connect()
     if err != nil {
         return nil, err
     }
     r.client = client
-    r.info("connected to registry.")
+    r.L1("connected to registry.")
 
     r.heartbeats = make(map[*Endpoint]*Heartbeat, 0)
 

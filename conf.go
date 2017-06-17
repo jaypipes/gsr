@@ -4,6 +4,7 @@ import (
     "crypto/tls"
     "fmt"
     "io/ioutil"
+    "os"
     "path/filepath"
     "strings"
     "time"
@@ -125,26 +126,41 @@ func (c *Config) TLSConfig() *tls.Config {
     keyPath := c.TLSKeyPath
 
     if certPath == "" || keyPath == "" {
-        fmt.Printf("error setting up TLS configuration. Either cert or " +
-              "key path not specified.")
+        fmt.Fprintf(
+            os.Stderr,
+            "error setting up TLS configuration. Either cert or " +
+            "key path not specified.",
+        )
         return nil
     }
 
     certContent, err := ioutil.ReadFile(certPath)
     if err != nil {
-        fmt.Printf("error getting cert content: %v", err)
+        fmt.Fprintf(
+            os.Stderr,
+            "error getting cert content: %v",
+            err,
+        )
         return nil
     }
 
     keyContent, err := ioutil.ReadFile(keyPath)
     if err != nil {
-        fmt.Printf("error getting key content: %v", err)
+        fmt.Fprintf(
+            os.Stderr,
+            "error getting key content: %v",
+            err,
+        )
         return nil
     }
 
     kp, err := tls.X509KeyPair(certContent, keyContent)
     if err != nil {
-        fmt.Printf("error setting up TLS cert: %v.", err)
+        fmt.Fprintf(
+            os.Stderr,
+            "error setting up TLS cert: %v.",
+            err,
+        )
         return nil
     }
 
