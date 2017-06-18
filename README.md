@@ -142,9 +142,9 @@ func main() {
         Address: bindHost(),
     }
 
-    err := gsr.Register(&ep)
+    err := sr.Register(&ep)
     if err != nil {
-        log.Fatalf("unable to register %v with gsr: %v", svc, err)
+        log.Fatalf("unable to register %v with gsr: %v", ep, err)
     }
 }
 

@@ -23,7 +23,7 @@ func main() {
     info("Starting %s service on %s.", myServiceName, myAddr)
 
     info("Connecting to gsr.")
-    reg, err = gsr.NewRegistry()
+    reg, err = gsr.New()
     if err != nil {
         log.Fatalf("Failed to connect to gsr registry: %v", err)
     }
