@@ -13,6 +13,7 @@ package gsr
 //        -> /$ENDPOINT2
 
 import (
+    "fmt"
     "log"
     "net"
     "os"
@@ -86,15 +87,29 @@ func (r *Registry) LERR(message string, args ...interface{}) {
     if r.logs.elog == nil {
         return
     }
-    r.logs.elog.Printf("[gsr] ERROR: " + message, args...)
+    outLevel := 1
+    if (r.logs.elog.Flags() & log.Lshortfile) == log.Lshortfile {
+        outLevel = 2
+    }
+    r.logs.elog.Output(
+        outLevel,
+        fmt.Sprintf("[gsr] ERROR: " + message, args...),
+    )
 }
 
 func (r *Registry) L1(message string, args ...interface{}) {
     if r.logs.log1 == nil {
         return
     }
+    outLevel := 1
+    if (r.logs.log2.Flags() & log.Lshortfile) == log.Lshortfile {
+        outLevel = 2
+    }
     if r.config.LogLevel > 0 {
-        r.logs.log1.Printf("[gsr] " + message, args...)
+        r.logs.log1.Output(
+            outLevel,
+            fmt.Sprintf("[gsr] " + message, args...),
+        )
     }
 }
 
@@ -102,8 +117,15 @@ func (r *Registry) L2(message string, args ...interface{}) {
     if r.logs.log2 == nil {
         return
     }
+    outLevel := 1
+    if (r.logs.log1.Flags() & log.Lshortfile) == log.Lshortfile {
+        outLevel = 2
+    }
     if r.config.LogLevel > 1 {
-        r.logs.log2.Printf("[gsr] " + message, args...)
+        r.logs.log2.Output(
+            outLevel,
+            fmt.Sprintf("[gsr] " + message, args...),
+        )
     }
 }
 
@@ -340,6 +362,9 @@ func New() (*Registry, error) {
     logMode := (log.Ldate | log.Ltime | log.LUTC)
     if r.config.LogMicroseconds {
         logMode |= log.Lmicroseconds
+    }
+    if r.config.LogFileTrace {
+        logMode |= log.Lshortfile
     }
     r.logs = &registryLogs{
         elog: log.New(os.Stderr, "", logMode),

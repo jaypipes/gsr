@@ -22,6 +22,7 @@ const (
     defaultUseTLS = false
     defaultLogLevel = 0
     defaultLogMicroseconds = false
+    defaultLogFileTrace = false
     defaultLeaseSeconds = 60
 )
 
@@ -41,6 +42,7 @@ type Config struct {
     TLSKeyPath string
     LogLevel int
     LogMicroseconds bool
+    LogFileTrace bool
     LeaseSeconds int64
 }
 
@@ -93,6 +95,10 @@ func configFromEnv() *Config {
         "GSR_LOG_MICROSECONDS",
         defaultLogMicroseconds,
     )
+    logFileTrace := EnvOrDefaultBool(
+        "GSR_LOG_FILE_TRACE",
+        defaultLogFileTrace,
+    )
 
     leaseSeconds := int64(EnvOrDefaultInt(
         "GSR_LEASE_SECONDS",
@@ -109,6 +115,7 @@ func configFromEnv() *Config {
         TLSKeyPath: keyPath,
         LogLevel: logLevel,
         LogMicroseconds: logMicroseconds,
+        LogFileTrace: logFileTrace,
         LeaseSeconds: leaseSeconds,
     }
     return cfg
