@@ -198,5 +198,8 @@ environment variables. Here is a list of environment variables that influence
   the number, the more verbose. (default: `0` almost no output during normal
   operation)
 
+* `GSR_LOG_MICROSECONDS`: a boolean that sets up microsecond-precision log
+  record timestamps (default: `false`)
+
 * `GSR_LEASE_SECONDS`: an integer representing the number of seconds gsr should
   use when writing endpoint information into the registry. (default: `60`)

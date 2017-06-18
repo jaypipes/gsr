@@ -337,22 +337,14 @@ func (r *Registry) connect() (*etcd.Client, error) {
 func New() (*Registry, error) {
     r := new(Registry)
     r.config = configFromEnv()
+    logMode := (log.Ldate | log.Ltime | log.LUTC)
+    if r.config.LogMicroseconds {
+        logMode |= log.Lmicroseconds
+    }
     r.logs = &registryLogs{
-        elog: log.New(
-            os.Stderr,
-            "",
-            (log.Ldate | log.Ltime | log.LUTC),
-        ),
-        log1: log.New(
-            os.Stdout,
-            "",
-            (log.Ldate | log.Ltime | log.LUTC),
-        ),
-        log2: log.New(
-            os.Stdout,
-            "",
-            (log.Ldate | log.Ltime | log.LUTC),
-        ),
+        elog: log.New(os.Stderr, "", logMode),
+        log1: log.New(os.Stderr, "", logMode),
+        log2: log.New(os.Stderr, "", logMode),
     }
     client, err := r.connect()
     if err != nil {

@@ -21,6 +21,7 @@ const (
     defaultEtcdDialTimeoutSeconds = 1
     defaultUseTLS = false
     defaultLogLevel = 0
+    defaultLogMicroseconds = false
     defaultLeaseSeconds = 60
 )
 
@@ -39,6 +40,7 @@ type Config struct {
     TLSCertPath string
     TLSKeyPath string
     LogLevel int
+    LogMicroseconds bool
     LeaseSeconds int64
 }
 
@@ -87,6 +89,11 @@ func configFromEnv() *Config {
         "GSR_LOG_LEVEL",
         defaultLogLevel,
     )
+    logMicroseconds := EnvOrDefaultBool(
+        "GSR_LOG_MICROSECONDS",
+        defaultLogMicroseconds,
+    )
+
     leaseSeconds := int64(EnvOrDefaultInt(
         "GSR_LEASE_SECONDS",
         defaultLeaseSeconds,
@@ -101,6 +108,7 @@ func configFromEnv() *Config {
         TLSCertPath: certPath,
         TLSKeyPath: keyPath,
         LogLevel: logLevel,
+        LogMicroseconds: logMicroseconds,
         LeaseSeconds: leaseSeconds,
     }
     return cfg
