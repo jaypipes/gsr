@@ -43,6 +43,12 @@
   version = "v1.2.0"
 
 [[projects]]
+  name = "github.com/jaypipes/envutil"
+  packages = ["."]
+  revision = "57c36c861e35a020adb10c6f5287546c69fa1d28"
+  version = "0.1"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = [
@@ -126,6 +132,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "84cf1f7219769adf5aed99889f5332278492772175865b33ca16db5f05babfd0"
+  inputs-digest = "9454ec85ca76f8879da541823460706e08342d153d25b409a10c4659caffcd2d"
   solver-name = "gps-cdcl"
   solver-version = 1

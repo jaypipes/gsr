@@ -10,6 +10,7 @@ import (
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	"github.com/jaypipes/envutil"
 )
 
 const (
@@ -49,58 +50,58 @@ type Config struct {
 func configFromEnv() *Config {
 	endpoints := etcdEndpoints()
 	keyPrefix := strings.TrimRight(
-		EnvOrDefaultStr(
+		envutil.WithDefault(
 			"GSR_KEY_PREFIX",
 			defaultEtcdKeyPrefix,
 		),
 		"/",
 	) + "/"
 	connectTimeout := time.Duration(
-		EnvOrDefaultInt(
+		envutil.WithDefaultInt(
 			"GSR_ETCD_CONNECT_TIMEOUT_SECONDS",
 			defaultEtcdConnectTimeoutSeconds,
 		),
 	) * time.Second
 	requestTimeout := time.Duration(
-		EnvOrDefaultInt(
+		envutil.WithDefaultInt(
 			"GSR_ETCD_REQUEST_TIMEOUT_SECONDS",
 			defaultEtcdRequestTimeoutSeconds,
 		),
 	) * time.Second
 	dialTimeout := time.Duration(
-		EnvOrDefaultInt(
+		envutil.WithDefaultInt(
 			"GSR_ETCD_DIAL_TIMEOUT_SECONDS",
 			defaultEtcdDialTimeoutSeconds,
 		),
 	) * time.Second
 
-	useTLS := EnvOrDefaultBool(
+	useTLS := envutil.WithDefaultBool(
 		"GSR_USE_TLS",
 		defaultUseTLS,
 	)
-	certPath := EnvOrDefaultStr(
+	certPath := envutil.WithDefault(
 		"GSR_TLS_CERT_PATH",
 		defaultTLSCertPath,
 	)
-	keyPath := EnvOrDefaultStr(
+	keyPath := envutil.WithDefault(
 		"GSR_TLS_KEY_PATH",
 		defaultTLSKeyPath,
 	)
 
-	logLevel := EnvOrDefaultInt(
+	logLevel := envutil.WithDefaultInt(
 		"GSR_LOG_LEVEL",
 		defaultLogLevel,
 	)
-	logMicroseconds := EnvOrDefaultBool(
+	logMicroseconds := envutil.WithDefaultBool(
 		"GSR_LOG_MICROSECONDS",
 		defaultLogMicroseconds,
 	)
-	logFileTrace := EnvOrDefaultBool(
+	logFileTrace := envutil.WithDefaultBool(
 		"GSR_LOG_FILE_TRACE",
 		defaultLogFileTrace,
 	)
 
-	leaseSeconds := int64(EnvOrDefaultInt(
+	leaseSeconds := int64(envutil.WithDefaultInt(
 		"GSR_LEASE_SECONDS",
 		defaultLeaseSeconds,
 	))
@@ -188,7 +189,7 @@ func (c *Config) TLSConfig() *tls.Config {
 // Returns the set of etcd3 endpoints used by gsr.
 func etcdEndpoints() []string {
 	eps := strings.Split(
-		EnvOrDefaultStr(
+		envutil.WithDefault(
 			"GSR_ETCD_ENDPOINTS", defaultEtcdEndpoints,
 		),
 		",",
