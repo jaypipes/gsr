@@ -44,3 +44,7 @@
 [prune]
   go-tests = true
   unused-packages = true
+
+[[constraint]]
+  name = "github.com/jaypipes/envutil"
+  version = "0.1.0"
