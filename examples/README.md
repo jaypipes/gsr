@@ -16,47 +16,85 @@ environment variable.
 
 If you don't have an `etcd3` cluster to use for the examples, you can easily
 create one by calling the [etcd3-container.bash](etcd3-container.bash) script
-located in this directory. This script uses `rkt` and `systemd-nspawn` to
-launch an etcd3 Application Container Image in a temporary container namespace
-and reports the host address the etcd3 service is exposed from:
+located in this directory. This script uses `docker` to launch an etcd3
+Application Container Image in a temporary container namespace and reports the
+host address the etcd3 service is exposed from:
 
 ```
-jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ ./examples/etcd3-container.bash 
-Checking and installing ACI keys for etcd ... ok.
-Starting etcd3 rkt pod ... ok.
+[jaypipes@uberbox examples]$ ./etcd3-container.bash
+Starting etcd container for gsr tests (data-dir: /tmp/gsr-example-cRQReU)... ok.
 Determining etcd3 endpoint address ... ok.
-etcd running in container at 172.16.28.68:2379.
+etcd running in container at 172.17.0.2:2379.
 ```
 
-### Handy `rkt` commands
+### Handy `docker` commands
 
-**NOTE**: If you want to check out the status of your etcd3 container, you can
-run `sudo rkt list`:
+If you want to check out the status of your etcd3 container, you can run
+`docker container inspetct gsr-example-etcd`, which outputs a JSON object of
+lots of information about the container. You can pipe the result of that to the
+`jq` program to slice and dice the contents any way you want.
 
-```
-jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ sudo rkt list
-UUID        APP IMAGE NAME      STATE   CREATED     STARTED     NETWORKS
-eaf1dde8    etcd    coreos.com/etcd:v3.0.6  running 16 seconds ago  16 seconds ago  default:ip4=172.16.28.68
-```
+**NOTE**: If you don't have it installed, install the `jq` program using your
+typical operating system package manager.
 
-Want to stop your etcd3 container?
-
-```
-jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ sudo rkt stop eaf1dde8
-"eaf1dde8-7715-48d0-a43f-883f1f12c351"
-jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ sudo rkt list
-UUID        APP IMAGE NAME      STATE   CREATED     STARTED     NETWORKS
-eaf1dde8    etcd    coreos.com/etcd:v3.0.6  exited  1 minute ago    1 minute ago    
-```
-
-Want to clean up old shut-down containers?
+Here's an example of getting the status and IP address of the container:
 
 ```
-jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ sudo rkt gc --grace-period=0
-gc: moving pod "eaf1dde8-7715-48d0-a43f-883f1f12c351" to garbage
-Garbage collecting pod "eaf1dde8-7715-48d0-a43f-883f1f12c351"
-jaypipes@uberbox:~/src/github.com/jaypipes/gsr$ sudo rkt list
-UUID    APP IMAGE NAME  STATE   CREATED STARTED NETWORKS
+[jaypipes@uberbox examples]$ docker container inspect gsr-example-etcd \
+ | jq '.[0] | {status: .State.Status, ip: .NetworkSettings.Networks.bridge.IPAddress}'
+{
+  "status": "running",
+  "ip": "172.17.0.2"
+}
+```
+
+Want to stop your etcd3 container? Use `docker container kill`:
+
+```
+[jaypipes@uberbox examples]$ docker container kill gsr-example-etcd 
+gsr-example-etcd
+```
+
+Want to clean up old shut-down containers? Use `docker system prune`
+
+```
+[jaypipes@uberbox examples]$ docker system prune --force
+Deleted Containers:
+68647a58d41ded832c321e49c279f38461413155c155aff9efb5a36e1b7c9980
+b24299f95cf6c61fe1df60f657bb5737cdad3c0c1615e2940b9fd0bb155c9d9c
+8317f1f48462859d55f99f99a578b7ac2057946d710cbdb050e64ef50ebbec98
+
+Deleted Images:
+deleted: sha256:f0dc69907bba6166ad1029a3d4fc7ff475a02d5f7777ef6efe598284a8be29e1
+deleted: sha256:f0159089b790cce5d80e14735145e6b596e44d9b3fe3354fe6caa5304a449a7a
+deleted: sha256:c0756f6dc7f55f5c181dc2734c8911c7ec89def640b48e086da7aec48c8de389
+deleted: sha256:86d96376daa9c4b035fa529255c5eab269566602af5119d8bf57fe6496b836c1
+deleted: sha256:b8de90d2b40fa46dfdc167f7845ec71b3464d5b139352c92c8421219bf345161
+deleted: sha256:57e953a27ab27bc1f2dfb6ff4b51dfa5013be0e119a0d7aff808c9c2165338a6
+deleted: sha256:bec63ccd0de19c6274b033449ba9383896ca6f16b2097f452d0900784bb923a2
+deleted: sha256:337d9021353f2bd9aadc57659a975481932a8d8555b3d839d0023ea023526d14
+deleted: sha256:c6d2f3e51fb44dd49b38c3a05f3b474da429edd79371b449501e78cebd284788
+deleted: sha256:3f08f41e6ec95ba55af06344650cdbbf8a7a1ee2a91211da37be568676726601
+deleted: sha256:d38735f3bd94af5bdd54549fb2db530b850262b6d6dbf3e1200565265066eac7
+deleted: sha256:5e60c0a651871bbd10d4a87e5dc67681d69649ffdcfcfd2cdc05742b25101756
+deleted: sha256:330c7b21c5be36afec85a424ce6d71e059a16693bb34ce363001466e110f505a
+deleted: sha256:97ae869f435ab79b108796844d6f10f1a4cc1a5e06451166f8875ec055695531
+deleted: sha256:96c28024756302a07e440bbcd492252d27113842dbb0d1b1a98a963bb8749277
+deleted: sha256:3ea86214d7779b70d5c7c4746a8fb9cdaa133e50ee73736e82f91f3640891d17
+deleted: sha256:aa493423841380bb10cb6f0eeb48ba74a85f8df770a322948d31ca2cc0a927d0
+deleted: sha256:1d3cadb473500253dd7719a0fd5b1f23611c2ac3e97074095fc07cce11698264
+deleted: sha256:7545b4b78f4432fc0372917f83b55044d1cf96634dabb56125cb9513a5675b22
+deleted: sha256:6bfeaab91ac2d245d622ef3c2435f9439a1e18413f0ae59d18872c66eb225f42
+deleted: sha256:d794acdfb02a0424668325186006483c8b4b9877eb20b136a9bc153a056dba53
+deleted: sha256:ca1cf51d0606051bc8fb2c8c8a9fa68cb4fcbbc6308c1e2ed57595353ba463c7
+deleted: sha256:54d27607c184e835bb82869da8b3fb966fd15e2fbfe4fea646182dc636888888
+deleted: sha256:bf2bfe4738c84348764b034a6cf30f77e6f0d2814c77c15b6c549b4f722d8736
+deleted: sha256:9474a8458a18989f75cbd4f51613a35ff83ab9330e0a25456dc8c52b39094489
+deleted: sha256:7de31ee7403df9c61bde96258c3030a8d5d1343c239a85caccd0390b9c17e005
+deleted: sha256:493154b8ad9ff968713bfca948c58373b3984414d3a57f7e7e8b5deba0def729
+deleted: sha256:20722dd6e94e476a62a0a4a6556058af3a9c1e2508f6599aa8386ec82315b75a
+
+Total reclaimed space: 1.613GB
 ```
 
 ## Step 2: Verify there's an empty `gsr` service registry
