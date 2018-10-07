@@ -19,15 +19,13 @@ if debug_enabled; then
     echo "======================================="
 fi
 
-echo -n "Building Docker image for example data service ... "
+echo "Building Docker image for example data service ... "
 cd $EXAMPLES_DIR/cmd/data
-docker build -t gsr-example-data . -f Dockerfile >/dev/null 2>&1
-echo "ok."
+docker build -t gsr-example-data . -f Dockerfile
 
-echo -n "Building Docker image for example web service ... "
+echo "Building Docker image for example web service ... "
 cd $EXAMPLES_DIR/cmd/web
-docker build -t gsr-example-web . -f Dockerfile >/dev/null 2>&1
-echo "ok."
+docker build -t gsr-example-web . -f Dockerfile
 
 NODE_ADDRESS=${NODE_ADDRESS:-"0.0.0.0"}
 

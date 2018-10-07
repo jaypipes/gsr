@@ -32,6 +32,13 @@ func main() {
 		log.Fatalf("failed to connect to gsr registry: %v", err)
 	}
 
+	eps := getEndpoints()
+	info(
+		"before registering itself, %s service knows about endpoints: %v\n",
+		myServiceName,
+		eps,
+	)
+
 	info("registering %s with gsr.", myAddr)
 	ep := gsr.Endpoint{
 		Service: &gsr.Service{Name: myServiceName},
@@ -47,13 +54,18 @@ func main() {
 	log.Fatal(http.ListenAndServe(myAddr, nil))
 }
 
-func handleHttp(w http.ResponseWriter, r *http.Request) {
+func getEndpoints() []string {
 	eps := reg.Endpoints("")
 	out := make([]string, len(eps))
 	for x, ep := range eps {
 		out[x] = ep.Service.Name + ":" + ep.Address
 	}
-	fmt.Fprintf(w, "%s service knows about endpoints: %v\n", myServiceName, out)
+	return out
+}
+
+func handleHttp(w http.ResponseWriter, r *http.Request) {
+	eps := getEndpoints()
+	fmt.Fprintf(w, "%s service knows about endpoints: %v\n", myServiceName, eps)
 }
 
 func printGsrEnvVars() {
