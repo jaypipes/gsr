@@ -38,3 +38,43 @@ service_stop_if_running() {
         echo "no."
     fi
 }
+
+start_etcd_container() {
+    NODE_ADDRESS=${NODE_ADDRESS:-"0.0.0.0"}
+    TMP_DIR=$(mktemp -d -t gsr-example-XXXXXX)
+    DATA_DIR=${DATA_DIR:-$TMP_DIR}
+
+    echo -n "Starting etcd container for gsr tests (data-dir: $DATA_DIR)... "
+    docker run -d \
+        --rm \
+        -p 2379:2379 \
+        -p 2380:2380 \
+        --volume=${DATA_DIR}:/etcd-data \
+        --name gsr-example-etcd \
+        quay.io/coreos/etcd:latest \
+        /usr/local/bin/etcd \
+        --data-dir=/etcd-data --name node1 \
+        --initial-advertise-peer-urls http://${NODE_ADDRESS}:2380 \
+        --listen-peer-urls http://${NODE_ADDRESS}:2380 \
+        --advertise-client-urls http://${NODE_ADDRESS}:2379 \
+        --listen-client-urls http://${NODE_ADDRESS}:2379 \
+        --initial-cluster node1=http://${NODE_ADDRESS}:2380 >/dev/null 2>&1
+    echo "ok."
+}
+
+get_etcd_address() {
+    echo -n "Determining etcd3 endpoint address ... "
+
+    sleep_time=0
+
+    GSR_TEST_ETCD_HOST=""
+
+    until [ $sleep_time -eq 8 ]; do
+        sleep $(( sleep_time++ ))
+        GSR_TEST_ETCD_HOST=$(docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' gsr-example-etcd)
+        if [[ "$GSR_TEST_ETCD_HOST" != "" ]]; then
+            echo "ok."
+            break
+        fi
+    done
+}

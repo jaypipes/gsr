@@ -27,39 +27,8 @@ echo "Building Docker image for example web service ... "
 cd $EXAMPLES_DIR/cmd/web
 docker build -t gsr-example-web . -f Dockerfile
 
-NODE_ADDRESS=${NODE_ADDRESS:-"0.0.0.0"}
+start_etcd_container && get_etcd_address
 
-echo -n "Starting etcd container for gsr tests ... "
-docker run -d \
-    --rm \
-    -p 2379:2379 \
-    -p 2380:2380 \
-    --volume=${DATA_DIR}:/etcd-data \
-    --name gsr-example-etcd \
-    quay.io/coreos/etcd:latest \
-    /usr/local/bin/etcd \
-    --data-dir=/etcd-data --name node1 \
-    --initial-advertise-peer-urls http://${NODE_ADDRESS}:2380 \
-    --listen-peer-urls http://${NODE_ADDRESS}:2380 \
-    --advertise-client-urls http://${NODE_ADDRESS}:2379 \
-    --listen-client-urls http://${NODE_ADDRESS}:2379 \
-    --initial-cluster node1=http://${NODE_ADDRESS}:2380 >/dev/null 2>&1
-echo "ok."
-
-echo -n "Determining etcd3 endpoint address ... "
-
-sleep_time=0
-
-GSR_TEST_ETCD_HOST=""
-
-until [ $sleep_time -eq 8 ]; do
-    sleep $(( sleep_time++ ))
-    GSR_TEST_ETCD_HOST=$(docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' gsr-example-etcd)
-    if [[ "$GSR_TEST_ETCD_HOST" != "" ]]; then
-        echo "ok."
-        break
-    fi
-done
 echo "etcd running in container at ${GSR_TEST_ETCD_HOST}:2379."
 
 echo -n "Starting gsr-example-data container ... "
