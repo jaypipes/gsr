@@ -3,6 +3,7 @@
 DEBUG=${DEBUG:-0}
 DATA_DIR=$(mktemp -d -t gsr-example-XXXXXX)
 EXAMPLES_DIR=$(cd $(dirname "$0")/ && pwd)
+VERSION=`git describe --tags --always --dirty`
 
 source $EXAMPLES_DIR/common.bash
 
@@ -21,11 +22,11 @@ fi
 
 echo "Building Docker image for example data service ... "
 cd $EXAMPLES_DIR/cmd/data
-docker build -t gsr-example-data . -f Dockerfile
+docker build -t gsr-example-data:$VERSION . -f Dockerfile
 
 echo "Building Docker image for example web service ... "
 cd $EXAMPLES_DIR/cmd/web
-docker build -t gsr-example-web . -f Dockerfile
+docker build -t gsr-example-web:$VERSION . -f Dockerfile
 
 start_etcd_container && get_etcd_address
 
