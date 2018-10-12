@@ -45,7 +45,7 @@ docker run -d \
     /app/main 2>&1 >/dev/null
 echo "ok."
 
-sleep 5
+DATA_START=$(date +%Y-%m-%dT%H:%M:%S --date="`date` + 1 sec")
 
 echo "Logs from gsr-example-data container:"
 
@@ -62,21 +62,27 @@ docker run -d \
     /app/main 2>&1 >/dev/null
 echo "ok."
 
-echo "Logs from gsr-example-web container:"
-
-docker container logs gsr-example-web
-
-echo "Logs from gsr-example-data container:"
-
-docker container logs gsr-example-data
-
-echo "Killing example data containers ... "
-
-docker container kill gsr-example-data
+WEB_START=$(date +%Y-%m-%dT%H:%M:%S --date="`date` + 1 sec")
 
 echo "Logs from gsr-example-web container:"
 
 docker container logs gsr-example-web
+
+echo "Logs from gsr-example-data container since $DATA_START:"
+
+docker container logs gsr-example-data --since $DATA_START
+
+echo -n "Killing example data containers and waiting 10 seconds ... "
+
+docker container kill gsr-example-data 2>&1 >/dev/null
+
+sleep 10
+
+echo "ok."
+
+echo "Logs from gsr-example-web container since $WEB_START:"
+
+docker container logs gsr-example-web --since $WEB_START
 
 echo -n "Killing example web and etcd containers ... "
 
