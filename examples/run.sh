@@ -41,7 +41,7 @@ docker run -d \
     -e "GSR_LOG_LEVEL=3" \
     -e "GSR_ETCD_ENDPOINTS=http://$GSR_TEST_ETCD_HOST:2379" \
     -e "GSR_ETCD_CONNECT_TIMEOUT_SECONDS=3" \
-    gsr-example-data:latest \
+    gsr-example-data:$VERSION \
     /app/main 2>&1 >/dev/null
 echo "ok."
 
@@ -58,7 +58,7 @@ docker run -d \
     -e "GSR_LOG_LEVEL=3" \
     -e "GSR_ETCD_ENDPOINTS=http://$GSR_TEST_ETCD_HOST:2379" \
     -e "GSR_ETCD_CONNECT_TIMEOUT_SECONDS=3" \
-    gsr-example-web:latest \
+    gsr-example-web:$VERSION \
     /app/main 2>&1 >/dev/null
 echo "ok."
 
