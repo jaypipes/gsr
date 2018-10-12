@@ -39,7 +39,7 @@ func main() {
 		eps,
 	)
 
-	info("registering %s with gsr.", myAddr)
+	info("registering %s with gsr as a %s service endpoint.", myAddr, myServiceName)
 	ep := gsr.Endpoint{
 		Service: &gsr.Service{Name: myServiceName},
 		Address: myAddr,
