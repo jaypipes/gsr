@@ -11,14 +11,13 @@
   name = "github.com/coreos/etcd"
   packages = [
     "auth/authpb",
-    "clientv3",
     "etcdserver/api/v3rpc/rpctypes",
     "etcdserver/etcdserverpb",
     "mvcc/mvccpb",
     "pkg/types"
   ]
-  revision = "fca8add78a9d926166eb739b8e4a124434025ba3"
-  version = "v3.3.9"
+  revision = "27fc7e2296f506182f58ce846e48f36b34fe6842"
+  version = "v3.3.10"
 
 [[projects]]
   name = "github.com/gogo/protobuf"
@@ -49,6 +48,12 @@
   version = "0.1"
 
 [[projects]]
+  name = "go.etcd.io/etcd"
+  packages = ["clientv3"]
+  revision = "27fc7e2296f506182f58ce846e48f36b34fe6842"
+  version = "v3.3.10"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = [
@@ -60,13 +65,13 @@
     "internal/timeseries",
     "trace"
   ]
-  revision = "4dfa2610cdf3b287375bbba5b8f2a14d3b01d8de"
+  revision = "49bb7cea24b1df9410e1712aa6433dae904ff66a"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "e4b3c5e9061176387e7cea65e4dc5853801f3fb7"
+  revision = "fa43e7bc11baaae89f3f902b2b4d832b68234844"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -93,7 +98,7 @@
   branch = "master"
   name = "google.golang.org/genproto"
   packages = ["googleapis/rpc/status"]
-  revision = "c7e5094acea1ca1b899e2259d80a6b0f882f81f8"
+  revision = "af9cb2a35e7f169ec875002c1829c9b315cddc04"
 
 [[projects]]
   name = "google.golang.org/grpc"
@@ -132,6 +137,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "9454ec85ca76f8879da541823460706e08342d153d25b409a10c4659caffcd2d"
+  inputs-digest = "865b311e3f4c7dcd3c335a8442325dbd10a8cbf6deec4fa3b8ecde8c9096fe7c"
   solver-name = "gps-cdcl"
   solver-version = 1

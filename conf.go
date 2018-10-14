@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/jaypipes/envutil"
+	etcd "go.etcd.io/etcd/clientv3"
 )
 
 const (
