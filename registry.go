@@ -21,7 +21,7 @@ import (
 	"syscall"
 
 	"github.com/cenkalti/backoff"
-	etcd "github.com/coreos/etcd/clientv3"
+	etcd "go.etcd.io/etcd/clientv3"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
