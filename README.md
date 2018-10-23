@@ -97,8 +97,8 @@ func main() {
     // the endpoints the service has so that we can query for data
     dataEps := sr.Endpoints("data-access")
     for _, ep := range(dataEps) {
-	// Try connecting to the data access service. This code is an example.
-	// Your service access code might look very different...
+    // Try connecting to the data access service. This code is an example.
+    // Your service access code might look very different...
         if dbConn, err := data.connect(ep.Address); err != nil {
             log.Printf("Failed to connect to data access service: %v", err)
         }
@@ -129,6 +129,14 @@ import (
     "github.com/jaypipes/gsr"
 )
 
+const (
+    myServiceName = "my-whizzbang-service"
+)
+
+var (
+    myAddr = bindHost()
+)
+
 func main() {
     // Creates a new gsr.Registry instance that is connected to the gsr etcd
     // registry
@@ -138,8 +146,8 @@ func main() {
     }
 
     ep := gsr.Endpoint{
-        Service: &gsr.Service{"my-whizzbang-service"},
-        Address: bindHost(),
+        Service: &gsr.Service{myServiceName},
+        Address: myAddr,
     }
 
     err := sr.Register(&ep)
@@ -157,6 +165,36 @@ func bindHost() string {
     addr := c.LocalAddr().String()
     return addr[:strings.LastIndex(addr, ":")]
 }
+```
+
+### Service de-registration
+
+Application services typically want to remove themselves from the `gsr`
+registry when the application container or process receives a `SIGTERM` signal
+(as is the case when, e.g. a `docker stop $CONTAINER` command is called). The
+`gsr.Registry.Unregister()` function can be called from a signal trap to
+fast-notify other `gsr.Registry` structs contained in other service endpoint
+code that a particular endpoint should be removed from their endpoints list.
+
+Here is some example code you can use in your own application to trap `SIGTERM`
+and call the `gsr.Registry.Unregister()` method appropriately:
+
+```go
+    sigs := make(chan os.Signal, 1)
+    done := make(chan bool, 1)
+    signal.Notify(sigs, syscall.SIGTERM)
+    go func() {
+        sig := <-sigs
+        fmt.Printf("received %s. unregistering %s:%s endpoint in gsr\n", sig, myServiceName, myAddr)
+        err := reg.Unregister(&ep)
+        if err != nil {
+            log.Fatalf("failed to unregister: %s\n", err)
+        }
+        done <- true
+    }()
+
+    // Wait for signal...
+    <-done
 ```
 
 **Need more example code?**
