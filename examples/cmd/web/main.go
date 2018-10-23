@@ -108,6 +108,3 @@ func bindHost() string {
 	addr := c.LocalAddr().String()
 	return addr[:strings.LastIndex(addr, ":")]
 }
-
-func trapSignals() {
-}
