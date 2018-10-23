@@ -213,8 +213,8 @@ func (r *Registry) Register(ep *Endpoint) error {
 }
 
 // Unregister removes an endpoint from the gsr registry. It is typically called
-// from a SIGTERM/SIGKILL signal handler to short-circuit the automatic
-// heartbeat that keeps endpoints "alive" in gsr.
+// from a SIGTERM signal handler to short-circuit the automatic heartbeat that
+// keeps endpoints "alive" in gsr.
 func (r *Registry) Unregister(ep *Endpoint) error {
 	service := ep.Service.Name
 	endpoint := ep.Address
