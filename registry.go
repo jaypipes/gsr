@@ -212,6 +212,38 @@ func (r *Registry) Register(ep *Endpoint) error {
 	return nil
 }
 
+// Unregister removes an endpoint from the gsr registry. It is typically called
+// from a SIGTERM/SIGKILL signal handler to short-circuit the automatic
+// heartbeat that keeps endpoints "alive" in gsr.
+func (r *Registry) Unregister(ep *Endpoint) error {
+	service := ep.Service.Name
+	endpoint := ep.Address
+	c := r.client
+
+	r.L2("deleting registry entry for %s:%s", service, endpoint)
+
+	ekey := r.endpointKey(service, endpoint)
+	onSuccess := etcd.OpDelete(ekey)
+	// Ensure the $PREFIX/services/$SERVICE/$ENDPOINT key exists
+	compare := etcd.Compare(etcd.Version(ekey), "=", 1)
+	ctx, cancel := r.requestCtx()
+	resp, err := c.KV.Txn(ctx).If(compare).Then(onSuccess).Commit()
+	cancel()
+
+	if err != nil {
+		r.LERR("failed to create txn in etcd: %v", err)
+		return err
+	} else if resp.Succeeded == false {
+		r.LERR(
+			"failed to delete registry entry for %s:%s %s.",
+			service,
+			endpoint,
+			resp.Responses[0],
+		)
+	}
+	return nil
+}
+
 // Creates an entry for an endpoint in the gsr registry
 func (r *Registry) createEndpoint(ep *Endpoint) error {
 	service := ep.Service.Name

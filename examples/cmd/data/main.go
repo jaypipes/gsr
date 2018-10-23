@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/jaypipes/gsr"
 )
@@ -18,6 +20,7 @@ const (
 var (
 	myAddr = bindHost() + ":9000"
 	reg    *gsr.Registry
+	ep     = gsr.Endpoint{}
 )
 
 func main() {
@@ -40,18 +43,30 @@ func main() {
 	)
 
 	info("registering %s with gsr as a %s service endpoint.", myAddr, myServiceName)
-	ep := gsr.Endpoint{
-		Service: &gsr.Service{Name: myServiceName},
-		Address: myAddr,
-	}
+	ep.Service = &gsr.Service{Name: myServiceName}
+	ep.Address = myAddr
 	err = reg.Register(&ep)
 	if err != nil {
 		log.Fatalf("failed to register with gsr: %v", err)
 	}
 
+	sigs := make(chan os.Signal, 1)
+	done := make(chan bool, 1)
+	signal.Notify(sigs, syscall.SIGTERM)
+	go func() {
+		sig := <-sigs
+		info("received %s. unregistering %s:%s endpoint in gsr", sig, myServiceName, myAddr)
+		err := reg.Unregister(&ep)
+		if err != nil {
+			log.Fatalf("failed to unregister: %s\n", err)
+		}
+		done <- true
+	}()
+
 	info("listening for HTTP traffic on %s.", myAddr)
 	http.HandleFunc("/", handleHttp)
 	log.Fatal(http.ListenAndServe(myAddr, nil))
+	<-done
 }
 
 func getEndpoints() []string {
@@ -92,4 +107,7 @@ func bindHost() string {
 	defer c.Close()
 	addr := c.LocalAddr().String()
 	return addr[:strings.LastIndex(addr, ":")]
+}
+
+func trapSignals() {
 }
